@@ -1,0 +1,9 @@
+.env
+.env*.local
+__pycache__/
+*.pyc
+chroma_db/
+data/
+notes/
+.vercel
+.DS_Store

@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoir — Your AI-powered second brain</title>
+    <meta name="description" content="Memoir turns your thoughts into organized notes, tasks, and calendar events. Just type anything.">
+    <meta property="og:title" content="Memoir">
+    <meta property="og:description" content="Your AI-powered second brain. Notes, tasks, and calendar — all from a single chat.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/static/style.css?v=25">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/turndown/dist/turndown.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-screen" id="login-screen" style="display:none">
+        <div class="login-bg-glow"></div>
+        <div class="login-card">
+            <div class="login-card-inner">
+                <svg class="login-logo" width="64" height="64" viewBox="0 0 32 32" fill="none">
+                    <rect width="32" height="32" rx="8" fill="url(#lg-login)"/>
+                    <path d="M6 26 L9 7 L16 20 L21 7 L27 6 L23 14 L27 26 L23 26 L21 16 L25 11 L23 10 L16 17 L11 10 L10 26Z" fill="white" opacity="0.9"/>
+                    <defs><linearGradient id="lg-login" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#c48b5c"/><stop offset="1" stop-color="#8a5a32"/></linearGradient></defs>
+                </svg>
+                <h1 class="login-title">Memoir</h1>
+                <p class="login-subtitle">Your smart notes, tasks, and calendar — powered by AI</p>
+                <div id="google-signin-gsi" class="google-btn-gsi"></div>
+                <button class="google-signin-custom" id="google-signin-btn" type="button">
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                    <span>Sign in with Google</span>
+                </button>
+                <p class="login-footer">Sign in to sync your data securely across devices</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="app" id="app-container" style="display:none">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <svg class="logo-svg" width="28" height="28" viewBox="0 0 32 32" fill="none">
+                        <rect width="32" height="32" rx="8" fill="url(#lg)"/>
+                        <path d="M6 26 L9 7 L16 20 L21 7 L27 6 L23 14 L27 26 L23 26 L21 16 L25 11 L23 10 L16 17 L11 10 L10 26Z" fill="white" opacity="0.9"/>
+                        <defs><linearGradient id="lg" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#c48b5c"/><stop offset="1" stop-color="#8a5a32"/></linearGradient></defs>
+                    </svg>
+                    <span class="logo-text">Memoir</span>
+                </div>
+                <button class="icon-btn sm" id="sidebar-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+            <div class="sidebar-tabs">
+                <button class="sidebar-tab active" data-app="notes" title="Notes">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    <span>Notes</span>
+                </button>
+                <button class="sidebar-tab" data-app="tasks" title="Tasks">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <span>Tasks</span>
+                </button>
+                <button class="sidebar-tab" data-app="calendar" title="Calendar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <span>Calendar</span>
+                </button>
+            </div>
+            <nav class="sidebar-nav" id="sidebar-nav-notes">
+                <div class="sidebar-label">Recent</div>
+                <div id="recent-list" class="recent-list"><div class="sidebar-empty">No activity yet</div></div>
+                <div class="sidebar-divider"></div>
+                <div class="sidebar-label">Notebooks</div>
+                <div id="category-list" class="category-list"><div class="sidebar-empty">No notebooks yet</div></div>
+            </nav>
+            <nav class="sidebar-nav hidden" id="sidebar-nav-tasks">
+                <div class="sidebar-label">Views</div>
+                <div class="task-nav-list">
+                    <button class="task-nav-item active" data-view="inbox">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                        <span>Inbox</span>
+                        <span class="task-nav-count" id="inbox-count"></span>
+                    </button>
+                    <button class="task-nav-item" data-view="today">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <span>Today</span>
+                        <span class="task-nav-count" id="today-count"></span>
+                    </button>
+                    <button class="task-nav-item" data-view="upcoming">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        <span>Upcoming</span>
+                        <span class="task-nav-count" id="upcoming-count"></span>
+                    </button>
+                </div>
+                <div class="sidebar-divider"></div>
+                <div class="sidebar-label">Projects</div>
+                <div id="task-projects-list" class="category-list"><div class="sidebar-empty">No projects yet</div></div>
+            </nav>
+            <nav class="sidebar-nav hidden" id="sidebar-nav-calendar">
+                <div class="mini-calendar" id="mini-calendar"></div>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="theme-btn" id="theme-toggle">
+                    <svg class="t-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg class="t-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    <span>Theme</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="main">
+            <header class="topbar">
+                <button class="icon-btn" id="menu-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+                <div class="topbar-title">
+                    <svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="url(#lg2)"/><path d="M6 26 L9 7 L16 20 L21 7 L27 6 L23 14 L27 26 L23 26 L21 16 L25 11 L23 10 L16 17 L11 10 L10 26Z" fill="white" opacity="0.9"/><defs><linearGradient id="lg2" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#c48b5c"/><stop offset="1" stop-color="#8a5a32"/></linearGradient></defs></svg>
+                    Memoir
+                </div>
+                <div class="topbar-actions">
+                    <button class="icon-btn" id="clear-chat-btn" title="Clear chat" style="display:none">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    </button>
+                    <button class="icon-btn undo-btn" id="undo-btn" title="Undo (Ctrl+Z)" style="display:none">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                    </button>
+                    <button class="icon-btn redo-btn" id="redo-btn" title="Redo (Ctrl+Shift+Z)" style="display:none">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+                    </button>
+                    <button class="icon-btn" id="theme-toggle-topbar"><svg class="t-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="t-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+                    <div class="profile-wrapper" id="profile-wrapper">
+                        <button class="icon-btn user-btn" id="profile-btn" title="Profile"><img class="user-avatar" id="user-avatar" src="" alt=""><svg class="user-fallback" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+                        <div class="profile-dropdown" id="profile-dropdown">
+                            <div class="profile-header">
+                                <img class="profile-pic" id="profile-pic" src="" alt="">
+                                <div class="profile-info">
+                                    <div class="profile-name" id="profile-name"></div>
+                                    <div class="profile-email" id="profile-email"></div>
+                                </div>
+                            </div>
+                            <div class="profile-divider"></div>
+                            <button class="profile-menu-item" id="export-btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                <span>Export Data</span>
+                            </button>
+                            <button class="profile-menu-item" id="feedback-btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                <span>Send Feedback</span>
+                            </button>
+                            <button class="profile-menu-item" id="logout-btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                <span>Sign out</span>
+                            </button>
+                            <div class="profile-divider"></div>
+                            <div class="profile-delete-link" id="delete-account-btn">Delete account</div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <!-- Notes View (default) -->
+            <div class="app-view active" id="view-notes">
+                <div class="messages" id="messages"></div>
+            </div>
+
+            <!-- Tasks View -->
+            <div class="app-view" id="view-tasks">
+                <div class="tasks-header">
+                    <h2 class="tasks-view-title" id="tasks-view-title">Inbox</h2>
+                    <div class="tasks-header-actions">
+                        <button class="icon-btn" id="show-completed-btn" title="Show completed">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="tasks-list" id="tasks-list"></div>
+            </div>
+
+            <!-- Calendar View -->
+            <div class="app-view" id="view-calendar">
+                <div class="cal-toolbar">
+                    <button class="btn ghost btn-sm" id="cal-today-btn">Today</button>
+                    <button class="icon-btn" id="cal-prev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>
+                    <button class="icon-btn" id="cal-next"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
+                    <h2 class="cal-title" id="cal-title"></h2>
+                    <div class="cal-view-switch">
+                        <button class="cal-view-btn active" data-view="month">Month</button>
+                        <button class="cal-view-btn" data-view="week">Week</button>
+                        <button class="cal-view-btn" data-view="day">Day</button>
+                    </div>
+                </div>
+                <div class="cal-grid-wrapper" id="cal-grid-wrapper"></div>
+            </div>
+
+            <!-- Universal input — shared across all views -->
+            <div class="input-wrapper" id="universal-input">
+                <form class="input-area" id="form">
+                    <textarea id="input" placeholder="Type anything — notes, tasks, events, or questions..." rows="1" autocomplete="off" autofocus></textarea>
+                    <button type="button" id="mic-btn" class="mic-btn" aria-label="Voice input">
+                        <svg class="mic-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        <span class="mic-recording-dot"></span>
+                    </button>
+                    <button type="submit" id="send-btn" aria-label="Send">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    </button>
+                </form>
+                <div class="input-hint"><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line</div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Note modal -->
+    <div class="overlay" id="modal-overlay">
+        <div class="modal note-modal" id="modal">
+            <div class="modal-topbar">
+                <div class="modal-meta"><span class="pill" id="modal-badge"></span><span class="meta-date" id="modal-date"></span></div>
+                <div class="modal-btns">
+                    <button class="icon-btn sm" id="modal-ai" title="AI assist"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L9.5 8.5 2 12l7.5 3.5L12 22l2.5-6.5L22 12l-7.5-3.5z"/></svg></button>
+                    <button class="icon-btn sm" id="modal-fullscreen" title="Full screen"><svg class="fs-expand" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg><svg class="fs-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+                    <button class="icon-btn sm" id="modal-edit" title="Edit"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                    <button class="icon-btn sm" id="modal-move" title="Move"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+                    <button class="icon-btn sm danger" id="modal-delete" title="Delete"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button class="icon-btn sm" id="modal-close" title="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                </div>
+            </div>
+            <div id="modal-view">
+                <h1 class="modal-title" id="modal-title"></h1>
+                <article class="prose" id="modal-body"></article>
+                <div class="ai-prompt-bar hidden" id="ai-prompt-bar">
+                    <div class="ai-prompt-inner">
+                        <svg class="ai-prompt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L9.5 8.5 2 12l7.5 3.5L12 22l2.5-6.5L22 12l-7.5-3.5z"/></svg>
+                        <input type="text" class="ai-prompt-input" id="ai-prompt-input" placeholder="e.g. organize this list, add authors, sort alphabetically..." autocomplete="off">
+                        <button class="btn primary btn-sm" id="ai-prompt-send">Apply</button>
+                        <button class="icon-btn sm" id="ai-prompt-close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                    </div>
+                </div>
+                <div class="modal-original hidden" id="modal-original">
+                    <button class="confirm-original-toggle" id="modal-original-toggle">
+                        <svg class="confirm-original-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                        <span>Show original</span>
+                    </button>
+                    <div class="confirm-original-text" id="modal-original-text"></div>
+                </div>
+            </div>
+            <div id="modal-edit-view" class="hidden">
+                <input type="text" class="edit-title" id="edit-title" placeholder="Title">
+                <div class="edit-toolbar" id="edit-toolbar">
+                    <button class="toolbar-btn" data-cmd="bold" title="Bold"><strong>B</strong></button>
+                    <button class="toolbar-btn" data-cmd="italic" title="Italic"><em>I</em></button>
+                    <button class="toolbar-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+                    <span class="toolbar-sep"></span>
+                    <button class="toolbar-btn" data-cmd="heading" data-val="H1" title="Heading 1">H1</button>
+                    <button class="toolbar-btn" data-cmd="heading" data-val="H2" title="Heading 2">H2</button>
+                    <button class="toolbar-btn" data-cmd="heading" data-val="H3" title="Heading 3">H3</button>
+                    <span class="toolbar-sep"></span>
+                    <button class="toolbar-btn" data-cmd="insertUnorderedList" title="Bullet list"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></svg></button>
+                    <button class="toolbar-btn" data-cmd="insertOrderedList" title="Numbered list"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="2" y="9" font-size="9" fill="currentColor" stroke="none" font-family="inherit">1</text><text x="2" y="15" font-size="9" fill="currentColor" stroke="none" font-family="inherit">2</text><text x="2" y="21" font-size="9" fill="currentColor" stroke="none" font-family="inherit">3</text></svg></button>
+                    <button class="toolbar-btn" data-cmd="formatBlock" data-val="BLOCKQUOTE" title="Blockquote"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="3" y2="18" stroke-width="3" stroke-linecap="round"/><line x1="8" y1="8" x2="20" y2="8"/><line x1="8" y1="12" x2="18" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg></button>
+                    <button class="toolbar-btn" data-cmd="code" title="Inline code"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+                    <button class="toolbar-btn" data-cmd="createLink" title="Insert link"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
+                </div>
+                <div class="edit-content prose" id="edit-content" contenteditable="true"></div>
+                <div class="edit-bar">
+                    <button class="btn ghost" id="edit-cancel">Cancel</button>
+                    <button class="btn primary" id="edit-save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Move modal -->
+    <div class="overlay" id="move-overlay">
+        <div class="modal modal-sm">
+            <div class="modal-topbar"><h3 class="modal-sm-title">Move to notebook</h3><button class="icon-btn sm" id="move-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+            <div id="move-list" class="move-list"></div>
+        </div>
+    </div>
+
+    <!-- Category panel -->
+    <div class="overlay" id="cat-overlay">
+        <div class="modal note-modal">
+            <div class="modal-topbar">
+                <h2 class="modal-sm-title" id="cat-title"></h2>
+                <div class="modal-btns">
+                    <button class="icon-btn sm danger" id="cat-delete" title="Delete notebook"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button class="icon-btn sm" id="cat-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                </div>
+            </div>
+            <div id="cat-notes-list" class="cat-list"></div>
+        </div>
+    </div>
+
+    <!-- Task detail modal -->
+    <div class="overlay" id="task-overlay">
+        <div class="modal modal-sm task-detail-modal">
+            <div class="modal-topbar">
+                <h3 class="modal-sm-title">Task</h3>
+                <div class="modal-btns">
+                    <button class="icon-btn sm danger" id="task-modal-delete" title="Delete"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button class="icon-btn sm" id="task-modal-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                </div>
+            </div>
+            <div class="task-detail-body">
+                <input type="text" class="task-detail-title" id="task-detail-title" placeholder="Task title">
+                <textarea class="task-detail-desc" id="task-detail-desc" placeholder="Description..." rows="3"></textarea>
+                <div class="task-detail-fields">
+                    <div class="task-detail-field">
+                        <label>Due date</label>
+                        <input type="date" id="task-detail-date">
+                    </div>
+                    <div class="task-detail-field">
+                        <label>Time</label>
+                        <input type="time" id="task-detail-time">
+                    </div>
+                    <div class="task-detail-field">
+                        <label>Priority</label>
+                        <select id="task-detail-priority">
+                            <option value="4">P4 — Normal</option>
+                            <option value="3">P3 — Medium</option>
+                            <option value="2">P2 — High</option>
+                            <option value="1">P1 — Urgent</option>
+                        </select>
+                    </div>
+                    <div class="task-detail-field">
+                        <label>Project</label>
+                        <input type="text" id="task-detail-project" placeholder="inbox">
+                    </div>
+                </div>
+                <div class="task-detail-actions">
+                    <button class="btn ghost" id="task-detail-cancel">Cancel</button>
+                    <button class="btn primary" id="task-detail-save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Event modal -->
+    <div class="overlay" id="event-overlay">
+        <div class="modal modal-sm event-detail-modal">
+            <div class="modal-topbar">
+                <h3 class="modal-sm-title" id="event-modal-title">New Event</h3>
+                <div class="modal-btns">
+                    <button class="icon-btn sm danger" id="event-modal-delete" title="Delete" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button class="icon-btn sm" id="event-modal-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                </div>
+            </div>
+            <div class="event-detail-body">
+                <input type="text" class="event-detail-title" id="event-detail-title" placeholder="Event title">
+                <div class="task-detail-fields">
+                    <div class="task-detail-field">
+                        <label>Date</label>
+                        <input type="date" id="event-detail-date">
+                    </div>
+                    <div class="task-detail-field">
+                        <label>Start</label>
+                        <input type="time" id="event-detail-start">
+                    </div>
+                    <div class="task-detail-field">
+                        <label>End</label>
+                        <input type="time" id="event-detail-end">
+                    </div>
+                    <div class="task-detail-field">
+                        <label>All day</label>
+                        <input type="checkbox" id="event-detail-allday">
+                    </div>
+                    <div class="task-detail-field">
+                        <label>Location</label>
+                        <input type="text" id="event-detail-location" placeholder="Add location">
+                    </div>
+                    <div class="task-detail-field">
+                        <label>Color</label>
+                        <select id="event-detail-color">
+                            <option value="blue">Blue</option>
+                            <option value="red">Red</option>
+                            <option value="green">Green</option>
+                            <option value="orange">Orange</option>
+                            <option value="purple">Purple</option>
+                            <option value="teal">Teal</option>
+                        </select>
+                    </div>
+                </div>
+                <textarea class="task-detail-desc" id="event-detail-desc" placeholder="Description..." rows="2"></textarea>
+                <div class="task-detail-actions">
+                    <button class="btn ghost" id="event-detail-cancel">Cancel</button>
+                    <button class="btn primary" id="event-detail-save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm -->
+    <div class="overlay" id="confirm-overlay">
+        <div class="modal modal-sm confirm-box">
+            <p id="confirm-text"></p>
+            <div class="confirm-bar"><button class="btn ghost" id="confirm-no">Cancel</button><button class="btn danger" id="confirm-yes">Delete</button></div>
+        </div>
+    </div>
+
+    <!-- Feedback -->
+    <div class="overlay" id="feedback-overlay">
+        <div class="modal modal-sm">
+            <div class="modal-topbar">
+                <h3 class="modal-sm-title">Send Feedback</h3>
+                <div class="modal-btns">
+                    <button class="icon-btn sm" id="feedback-modal-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                </div>
+            </div>
+            <div style="padding:0 16px;">
+                <p style="color:var(--text-secondary);font-size:0.85rem;margin:0 0 12px;">Help us improve Memoir. Bug reports, feature requests, or general thoughts — all welcome.</p>
+                <textarea id="feedback-message" rows="5" placeholder="What's on your mind?" style="width:100%;resize:vertical;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:inherit;font-size:0.9rem;box-sizing:border-box;"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;">
+                <button class="btn ghost" id="feedback-cancel">Cancel</button>
+                <button class="btn primary" id="feedback-send">Send Feedback</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Account Confirmation -->
+    <div class="overlay" id="delete-account-overlay">
+        <div class="modal modal-sm">
+            <div class="modal-topbar">
+                <h3 class="modal-sm-title">Delete Account</h3>
+                <div class="modal-btns">
+                    <button class="icon-btn sm" id="delete-modal-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                </div>
+            </div>
+            <div style="padding:0 16px;">
+                <p style="color:var(--danger);font-size:0.9rem;font-weight:600;margin:0 0 8px;">This action is permanent and cannot be undone.</p>
+                <p style="color:var(--text-secondary);font-size:0.85rem;margin:0 0 16px;">All your notes, tasks, events, and account data will be permanently deleted.</p>
+                <p style="color:var(--text-secondary);font-size:0.85rem;margin:0 0 8px;">Type <strong style="color:var(--text);">delete my account</strong> to confirm:</p>
+                <input type="text" id="delete-confirm-input" placeholder="delete my account" autocomplete="off" style="width:100%;background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:inherit;font-size:0.9rem;box-sizing:border-box;">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;">
+                <button class="btn ghost" id="delete-cancel">Cancel</button>
+                <button class="btn danger-btn" id="delete-confirm" disabled>Delete Account</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <!-- Onboarding overlay (shown once on first login) -->
+    <div class="overlay" id="onboarding-overlay">
+        <div class="modal modal-sm onboarding-modal">
+            <div style="text-align:center;padding:8px 0 16px;">
+                <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin-bottom:12px;">
+                    <rect width="32" height="32" rx="8" fill="url(#lg-ob)"/>
+                    <path d="M6 26 L9 7 L16 20 L21 7 L27 6 L23 14 L27 26 L23 26 L21 16 L25 11 L23 10 L16 17 L11 10 L10 26Z" fill="white" opacity="0.9"/>
+                    <defs><linearGradient id="lg-ob" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#c48b5c"/><stop offset="1" stop-color="#8a5a32"/></linearGradient></defs>
+                </svg>
+                <h2 style="font-family:'Playfair Display',serif;font-size:1.5rem;margin:0 0 6px;">Welcome to Memoir</h2>
+                <p style="color:var(--text-secondary);font-size:0.9rem;margin:0 0 20px;">Your AI-powered second brain. Just type anything.</p>
+            </div>
+            <div class="onboarding-tips">
+                <div class="onboarding-tip">
+                    <span class="onboarding-tip-icon">📝</span>
+                    <div><strong>Save notes</strong><br><span style="color:var(--text-secondary);font-size:0.82rem;">"Note: started learning guitar"</span></div>
+                </div>
+                <div class="onboarding-tip">
+                    <span class="onboarding-tip-icon">✅</span>
+                    <div><strong>Create tasks</strong><br><span style="color:var(--text-secondary);font-size:0.82rem;">"Remind me to call mom tomorrow at 3pm"</span></div>
+                </div>
+                <div class="onboarding-tip">
+                    <span class="onboarding-tip-icon">📅</span>
+                    <div><strong>Add calendar events</strong><br><span style="color:var(--text-secondary);font-size:0.82rem;">"Meeting with Alex on Friday at 2pm"</span></div>
+                </div>
+                <div class="onboarding-tip">
+                    <span class="onboarding-tip-icon">🔍</span>
+                    <div><strong>Ask questions</strong><br><span style="color:var(--text-secondary);font-size:0.82rem;">"What did I note about guitar?" or "What's on my schedule?"</span></div>
+                </div>
+            </div>
+            <div style="padding:16px 0 0;text-align:center;">
+                <button class="btn primary" id="onboarding-done" style="min-width:140px;">Get started</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PostHog analytics (replace YOUR_POSTHOG_KEY with your project API key) -->
+    <script>
+        !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+        // posthog.init('YOUR_POSTHOG_KEY',{api_host:'https://us.i.posthog.com', person_profiles: 'identified_only'})
+    </script>
+
+    <script src="/static/script.js?v=25"></script>
+</body>
+</html>
