@@ -1330,10 +1330,13 @@ async def app_init(request: Request):
     try:
         user_id = get_current_user(request)
         with get_cursor() as cur:
-            cur.execute("SELECT id, email, name, picture FROM users WHERE id = %s", (user_id,))
+            cur.execute("SELECT id, email, name, picture, last_seen FROM users WHERE id = %s", (user_id,))
             row = cur.fetchone()
-        if row:
-            user = {"name": row["name"], "email": row["email"], "picture": row["picture"]}
+            if row:
+                user = {"name": row["name"], "email": row["email"], "picture": row["picture"],
+                        "last_seen": str(row["last_seen"]) if row.get("last_seen") else None}
+                # Update last_seen timestamp
+                cur.execute("UPDATE users SET last_seen = NOW() WHERE id = %s", (user_id,))
     except ValueError:
         pass
     return {"config": config, "user": user}

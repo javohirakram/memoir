@@ -16,6 +16,85 @@ function phCapture(event, props = {}) {
     if (window.posthog && typeof posthog.capture === "function") posthog.capture(event, props);
 }
 
+// ── Skeleton screen ──────────────────────────────────────────────
+let _skeletonTimer = null;
+function hideSkeleton() {
+    clearTimeout(_skeletonTimer);
+    const el = document.getElementById("skeleton-screen");
+    if (!el || el.classList.contains("hiding")) return;
+    el.classList.add("hiding");
+    setTimeout(() => el.remove(), 300);
+}
+function startSkeletonTimeout() {
+    _skeletonTimer = setTimeout(() => {
+        const t = document.getElementById("skeleton-timeout");
+        if (t) t.style.display = "";
+        phCapture("skeleton_timeout");
+    }, 15000);
+}
+
+// ── Welcome banner & cycling placeholders ────────────────────────
+let _placeholderInterval = null;
+const _placeholderPrompts = [
+    "remind me to call the dentist tomorrow at 3pm...",
+    "save this idea: app that tracks reading habits...",
+    "what did I save last week about React hooks?",
+    "meeting with Sarah on Friday at 2pm for project review...",
+];
+
+function showWelcomeBanner() {
+    if (localStorage.getItem("memoir_banner_dismissed")) return;
+    const banner = document.getElementById("welcome-banner");
+    if (!banner) return;
+    banner.style.display = "";
+    // Dismiss handlers
+    const closeBtn = document.getElementById("welcome-banner-close");
+    const dismiss = () => {
+        banner.classList.add("hiding");
+        setTimeout(() => { banner.style.display = "none"; }, 300);
+        try { localStorage.setItem("memoir_banner_dismissed", "1"); } catch {}
+        phCapture("onboarding_banner_dismissed");
+    };
+    if (closeBtn) closeBtn.addEventListener("click", dismiss, { once: true });
+    document.addEventListener("keydown", function _bannerEsc(e) {
+        if (e.key === "Escape" && banner.style.display !== "none") {
+            dismiss();
+            document.removeEventListener("keydown", _bannerEsc);
+        }
+    });
+}
+
+function startCyclingPlaceholders() {
+    const input = document.getElementById("input");
+    if (!input) return;
+    let idx = 0;
+    input.placeholder = _placeholderPrompts[0];
+    _placeholderInterval = setInterval(() => {
+        idx = (idx + 1) % _placeholderPrompts.length;
+        input.style.transition = "opacity 0.3s";
+        input.style.opacity = "0.5";
+        setTimeout(() => {
+            input.placeholder = _placeholderPrompts[idx];
+            input.style.opacity = "1";
+        }, 150);
+    }, 4000);
+}
+
+function stopCyclingPlaceholders() {
+    if (_placeholderInterval) {
+        clearInterval(_placeholderInterval);
+        _placeholderInterval = null;
+        const input = document.getElementById("input");
+        if (input) {
+            input.placeholder = "Type anything — notes, tasks, events, or questions...";
+            input.style.opacity = "";
+            input.style.transition = "";
+        }
+    }
+}
+
+let _firstMessageTracked = false;
+
 async function apiFetch(url, opts = {}) {
     const token = getToken();
     if (!opts.headers) opts.headers = {};
@@ -134,6 +213,8 @@ async function clearChat() {
 // ────────────────────────────────────────────────────────────────
 
 function showLogin() {
+    hideSkeleton();
+    stopCyclingPlaceholders();
     document.getElementById("login-screen").style.display = "";
     document.getElementById("app-container").style.display = "none";
     // Close profile dropdown if open
@@ -151,6 +232,8 @@ function showLogin() {
 }
 
 function showApp(user) {
+    hideSkeleton();
+    stopCyclingPlaceholders(); // clear any prior interval before potentially restarting
     document.getElementById("login-screen").style.display = "none";
     document.getElementById("app-container").style.display = "";
     currentUserEmail = user?.email || null;
@@ -611,24 +694,32 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.addEventListener("load", async () => {
+    startSkeletonTimeout();
     // Single request: fetch config + check auth together
     try {
         const token = getToken();
         const headers = token ? { "Authorization": "Bearer " + token } : {};
         const res = await fetch("/api/init", { headers });
         const data = await res.json();
+        hideSkeleton();
         // Set config
         if (data.config) window.GOOGLE_CLIENT_ID = data.config.google_client_id;
         // Handle auth result
         if (data.user) {
             setStoredUser(data.user);
             showApp(data.user);
+            // New user onboarding: show banner + cycling placeholders
+            if (!data.user.last_seen) {
+                showWelcomeBanner();
+                startCyclingPlaceholders();
+            }
         } else {
             // Token invalid or missing — clear and show login
             if (token) clearToken();
             showLogin();
         }
     } catch {
+        hideSkeleton();
         // Network error — use cached user if available
         const stored = getStoredUser();
         if (stored) { showApp(stored); }
@@ -1757,6 +1848,12 @@ async function sendMessage() {
     const text = inputEl.value.trim();
     if (!text) return;
 
+    // Stop cycling placeholders on first message
+    stopCyclingPlaceholders();
+    if (!_firstMessageTracked) {
+        _firstMessageTracked = true;
+        phCapture("first_message_sent");
+    }
     phCapture("message_sent");
     const wasApp = currentApp;
     inputEl.value = "";

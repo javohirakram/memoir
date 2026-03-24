@@ -190,6 +190,8 @@ DO $$ BEGIN
     BEGIN ALTER TABLE users ADD COLUMN password_hash TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END;
     -- Make google_id nullable for email-only users
     ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL;
+    -- Track when user last opened the app (NULL = never seen onboarding)
+    BEGIN ALTER TABLE users ADD COLUMN last_seen TIMESTAMPTZ; EXCEPTION WHEN duplicate_column THEN NULL; END;
 END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);

@@ -9,7 +9,7 @@
     <meta property="og:description" content="Your AI-powered second brain. Notes, tasks, and calendar — all from a single chat.">
     <meta property="og:type" content="website">
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/static/style.css?v=27">
+    <link rel="stylesheet" href="/static/style.css?v=28">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -19,6 +19,39 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
+    <!-- Loading Skeleton — static HTML, renders before JS loads -->
+    <div class="skeleton-screen" id="skeleton-screen">
+        <div class="skeleton-topbar">
+            <div class="skeleton-block" style="width:28px;height:28px;border-radius:8px"></div>
+            <div class="skeleton-block" style="width:80px;height:16px;border-radius:4px"></div>
+            <div style="flex:1"></div>
+            <div class="skeleton-block" style="width:32px;height:32px;border-radius:50%"></div>
+        </div>
+        <div class="skeleton-body">
+            <div class="skeleton-sidebar">
+                <div class="skeleton-block" style="width:100%;height:36px;border-radius:6px"></div>
+                <div class="skeleton-block" style="width:80%;height:14px;border-radius:4px;margin-top:20px"></div>
+                <div class="skeleton-block" style="width:100%;height:28px;border-radius:6px;margin-top:8px"></div>
+                <div class="skeleton-block" style="width:100%;height:28px;border-radius:6px;margin-top:6px"></div>
+                <div class="skeleton-block" style="width:100%;height:28px;border-radius:6px;margin-top:6px"></div>
+            </div>
+            <div class="skeleton-main">
+                <div class="skeleton-messages">
+                    <div class="skeleton-block" style="width:60%;height:40px;border-radius:12px;align-self:flex-end"></div>
+                    <div class="skeleton-block" style="width:75%;height:60px;border-radius:12px"></div>
+                    <div class="skeleton-block" style="width:50%;height:40px;border-radius:12px;align-self:flex-end"></div>
+                    <div class="skeleton-block" style="width:70%;height:50px;border-radius:12px"></div>
+                </div>
+                <div class="skeleton-input">
+                    <div class="skeleton-block" style="width:100%;height:44px;border-radius:12px"></div>
+                </div>
+            </div>
+        </div>
+        <div class="skeleton-timeout" id="skeleton-timeout" style="display:none">
+            Taking longer than expected...
+        </div>
+    </div>
+
     <!-- Login Screen -->
     <div class="login-screen" id="login-screen" style="display:none">
         <div class="login-bg-glow"></div>
@@ -208,6 +241,14 @@
                     </div>
                 </div>
                 <div class="cal-grid-wrapper" id="cal-grid-wrapper"></div>
+            </div>
+
+            <!-- Welcome Banner (new users) -->
+            <div class="welcome-banner" id="welcome-banner" role="complementary" style="display:none">
+                <div class="welcome-banner-content">
+                    <span class="welcome-banner-text">Welcome to Memoir! Type anything — notes, tasks, reminders, or questions. AI handles the rest.</span>
+                    <button class="welcome-banner-close" id="welcome-banner-close" aria-label="Dismiss welcome message">&times;</button>
+                </div>
             </div>
 
             <!-- Universal input — shared across all views -->
