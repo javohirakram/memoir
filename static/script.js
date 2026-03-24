@@ -251,6 +251,86 @@ function handleGoogleCredential(response) {
     .catch(err => alert("Login failed: " + err.message));
 }
 
+// ---------------------------------------------------------------------------
+// Email/Password Auth
+// ---------------------------------------------------------------------------
+let _authMode = "login"; // "login" or "register"
+
+function setAuthMode(mode) {
+    _authMode = mode;
+    const nameRow = document.getElementById("auth-name-row");
+    const submitBtn = document.getElementById("auth-submit-btn");
+    const toggleBtn = document.getElementById("auth-toggle-btn");
+    const passwordInput = document.getElementById("auth-password");
+    const errorEl = document.getElementById("auth-error");
+    if (errorEl) errorEl.textContent = "";
+
+    if (mode === "register") {
+        if (nameRow) nameRow.style.display = "";
+        if (submitBtn) submitBtn.textContent = "Create account";
+        if (toggleBtn) toggleBtn.innerHTML = 'Already have an account? <strong>Sign in</strong>';
+        if (passwordInput) passwordInput.autocomplete = "new-password";
+    } else {
+        if (nameRow) nameRow.style.display = "none";
+        if (submitBtn) submitBtn.textContent = "Sign in";
+        if (toggleBtn) toggleBtn.innerHTML = "Don\u2019t have an account? <strong>Sign up</strong>";
+        if (passwordInput) passwordInput.autocomplete = "current-password";
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const authForm = document.getElementById("auth-form");
+    const toggleBtn = document.getElementById("auth-toggle-btn");
+
+    if (toggleBtn) {
+        toggleBtn.addEventListener("click", () => {
+            setAuthMode(_authMode === "login" ? "register" : "login");
+        });
+    }
+
+    if (authForm) {
+        authForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const email = document.getElementById("auth-email").value.trim();
+            const password = document.getElementById("auth-password").value;
+            const name = document.getElementById("auth-name").value.trim();
+            const submitBtn = document.getElementById("auth-submit-btn");
+            const errorEl = document.getElementById("auth-error");
+
+            if (errorEl) errorEl.textContent = "";
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = _authMode === "login" ? "Signing in..." : "Creating account..."; }
+
+            try {
+                const url = _authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+                const body = _authMode === "register"
+                    ? { email, password, name }
+                    : { email, password };
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json();
+                if (data.token) {
+                    setToken(data.token);
+                    setStoredUser(data.user);
+                    phCapture(_authMode === "register" ? "register" : "login");
+                    showApp(data.user);
+                } else {
+                    if (errorEl) errorEl.textContent = data.error || "Something went wrong. Please try again.";
+                }
+            } catch (err) {
+                if (errorEl) errorEl.textContent = "Connection error. Please try again.";
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = _authMode === "login" ? "Sign in" : "Create account";
+            }
+        });
+    }
+});
+
 // Profile dropdown + Logout
 document.addEventListener("DOMContentLoaded", () => {
     const profileBtn = document.getElementById("profile-btn");
@@ -448,13 +528,13 @@ function initGSI() {
         google.accounts.id.initialize({
             client_id: window.GOOGLE_CLIENT_ID,
             callback: handleGoogleCredential,
-            use_fedcm_for_prompt: true,
+            auto_select: false,
         });
         // Render the official Google button immediately
         const gsiContainer = document.getElementById("google-signin-gsi");
         if (gsiContainer && !gsiContainer.hasChildNodes()) {
             google.accounts.id.renderButton(gsiContainer, {
-                theme: "outline", size: "large", width: 300, text: "signin_with",
+                theme: "outline", size: "large", width: 300, text: "continue_with",
                 shape: "rectangular", logo_alignment: "left",
             });
         }

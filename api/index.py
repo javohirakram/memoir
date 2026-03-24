@@ -1307,6 +1307,113 @@ async def auth_me(request: Request):
     return {"user": {"name": row["name"], "email": row["email"], "picture": row["picture"]}}
 
 
+# ---------------------------------------------------------------------------
+# Email/Password Auth
+# ---------------------------------------------------------------------------
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+def _hash_password(password: str) -> str:
+    import bcrypt
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    import bcrypt
+    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+
+
+@app.post("/api/auth/register")
+async def auth_register(req: RegisterRequest):
+    """Register a new user with email and password."""
+    email = req.email.strip().lower()
+    name = req.name.strip()
+    password = req.password
+
+    if not email or "@" not in email:
+        return JSONResponse(status_code=400, content={"error": "Valid email is required"})
+    if len(password) < 8:
+        return JSONResponse(status_code=400, content={"error": "Password must be at least 8 characters"})
+    if not name:
+        return JSONResponse(status_code=400, content={"error": "Name is required"})
+
+    # Check if email already exists
+    with get_cursor() as cur:
+        cur.execute("SELECT id, password_hash, google_id FROM users WHERE email = %s", (email,))
+        existing = cur.fetchone()
+
+    if existing:
+        if existing["password_hash"]:
+            return JSONResponse(status_code=409, content={"error": "An account with this email already exists. Please sign in."})
+        # User exists via Google OAuth — add password to their account
+        password_hash = _hash_password(password)
+        with get_cursor() as cur:
+            cur.execute("UPDATE users SET password_hash = %s, name = %s WHERE email = %s", (password_hash, name, email))
+        user_id = existing["id"]
+    else:
+        user_id = str(uuid.uuid4())
+        password_hash = _hash_password(password)
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO users (id, google_id, email, name, picture, password_hash)
+                VALUES (%s, NULL, %s, %s, '', %s)
+            """, (user_id, email, name, password_hash))
+        _send_welcome_email(email, name)
+
+    token = jwt.encode({
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "picture": "",
+        "exp": datetime.utcnow() + timedelta(days=JWT_EXPIRY_DAYS),
+    }, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    return {"token": token, "user": {"name": name, "email": email, "picture": ""}}
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: LoginRequest):
+    """Authenticate with email and password."""
+    email = req.email.strip().lower()
+    password = req.password
+
+    if not email or not password:
+        return JSONResponse(status_code=400, content={"error": "Email and password are required"})
+
+    with get_cursor() as cur:
+        cur.execute("SELECT id, email, name, picture, password_hash, google_id FROM users WHERE email = %s", (email,))
+        user = cur.fetchone()
+
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Invalid email or password"})
+
+    if not user["password_hash"]:
+        # User only has Google auth — suggest they use Google sign-in or set a password
+        return JSONResponse(status_code=401, content={"error": "This account uses Google Sign-In. Please sign in with Google, or register to set a password."})
+
+    if not _verify_password(password, user["password_hash"]):
+        return JSONResponse(status_code=401, content={"error": "Invalid email or password"})
+
+    token = jwt.encode({
+        "user_id": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "picture": user["picture"] or "",
+        "exp": datetime.utcnow() + timedelta(days=JWT_EXPIRY_DAYS),
+    }, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    return {"token": token, "user": {"name": user["name"], "email": user["email"], "picture": user["picture"] or ""}}
+
+
 def get_recent_tasks(n: int = 30, user_id: str = "") -> str:
     """Get uncompleted tasks as context string for the AI."""
     with get_cursor() as cur:

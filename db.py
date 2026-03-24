@@ -60,12 +60,15 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    google_id TEXT UNIQUE NOT NULL,
+    google_id TEXT UNIQUE,
     email TEXT NOT NULL,
     name TEXT NOT NULL,
     picture TEXT,
+    password_hash TEXT,
     created TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
@@ -224,6 +227,46 @@ def _init_db_once():
                 conn.rollback()
             except Exception:
                 pass
+
+    # Migration: add password_hash column to users for email/password auth
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'users' AND column_name = 'password_hash'"
+            )
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+    # Migration: make google_id nullable for email-only users
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL
+            """)
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+    # Migration: add unique index on email for email/password auth
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
     # Try HNSW index (may fail if not enough rows, that's OK)
     try:

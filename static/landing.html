@@ -581,6 +581,13 @@
     </style>
 </head>
 <body>
+<script>
+// Redirect logged-in users to app (skip landing page)
+try {
+    var t = localStorage.getItem("memoir-token");
+    if (t) window.location.replace("/app");
+} catch(e) {}
+</script>
 
 <nav id="nav">
     <a class="nav-left" href="/">

@@ -1669,6 +1669,89 @@ body::after {
 }
 .google-signin-custom svg { flex-shrink: 0; }
 .google-signin-custom span { white-space: nowrap; }
+/* -- Auth form (email/password) -- */
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 0;
+}
+.auth-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--bg-base);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.auth-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(196,139,92,0.15);
+}
+.auth-input::placeholder { color: var(--text-muted); }
+.auth-submit-btn {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(196,139,92,0.25);
+}
+.auth-submit-btn:hover {
+    background: var(--copper);
+    box-shadow: 0 4px 16px rgba(196,139,92,0.3);
+    transform: translateY(-1px);
+}
+.auth-submit-btn:active { transform: translateY(0); }
+.auth-submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+.auth-error {
+    color: #e57373;
+    font-size: 0.8rem;
+    min-height: 0;
+    text-align: center;
+    transition: min-height 0.2s;
+}
+.auth-error:not(:empty) { min-height: 1.2rem; }
+.auth-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-family: 'Inter', -apple-system, sans-serif;
+    padding: 0;
+}
+.auth-toggle-btn strong { color: var(--accent); }
+.auth-toggle-btn:hover strong { text-decoration: underline; }
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.25rem 0;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
 .login-footer {
     color: var(--text-muted);
     font-size: 0.75rem;
