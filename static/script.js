@@ -58,7 +58,7 @@ function _renderChatMessages(msgs) {
     msgs.forEach(m => {
         const div = document.createElement("div");
         div.className = `message ${m.role}`;
-        div.innerHTML = m.html; // safe: user's own previously-saved app-generated HTML
+        div.innerHTML = DOMPurify.sanitize(m.html);
         messagesEl.appendChild(div);
         if (m.role === "assistant") {
             if (div.querySelector(".confirm-card")) bindConfirmCard(div);
@@ -805,7 +805,7 @@ let isFullscreen = false;
 function openNoteView(note) {
     currentNote = note;
     $("modal-title").textContent = note.title;
-    $("modal-body").innerHTML = marked.parse(note.content || "");
+    $("modal-body").innerHTML = DOMPurify.sanitize(marked.parse(note.content || ""));
     $("modal-badge").textContent = note.category;
     $("modal-badge").className = "pill " + (note.category || "");
     $("modal-date").textContent = fmtDate(note.created);
@@ -900,7 +900,7 @@ async function submitAIPrompt() {
 
         if (data.ok && data.content) {
             currentNote.content = data.content;
-            $("modal-body").innerHTML = marked.parse(data.content);
+            $("modal-body").innerHTML = DOMPurify.sanitize(marked.parse(data.content));
             loadSidebar();
             refreshUndoStatus();
 
@@ -916,7 +916,7 @@ async function submitAIPrompt() {
             document.getElementById("ai-revert-btn").onclick = async () => {
                 revertBar.remove();
                 currentNote.content = previousContent;
-                $("modal-body").innerHTML = marked.parse(previousContent);
+                $("modal-body").innerHTML = DOMPurify.sanitize(marked.parse(previousContent));
                 // Restore in DB via undo API
                 await apiFetch("/api/undo", { method: "POST" }).catch(() => {});
                 loadSidebar();
@@ -932,7 +932,7 @@ async function submitAIPrompt() {
 $("modal-edit").onclick = () => {
     if (!currentNote) return;
     $("edit-title").value = currentNote.title;
-    $("edit-content").innerHTML = marked.parse(currentNote.content || "");
+    $("edit-content").innerHTML = DOMPurify.sanitize(marked.parse(currentNote.content || ""));
     $("modal-view").classList.add("hidden");
     $("modal-edit-view").classList.remove("hidden");
     $("edit-content").focus();
@@ -956,7 +956,7 @@ $("edit-save").onclick = async () => {
     currentNote.title = title;
     currentNote.content = content;
     $("modal-title").textContent = title;
-    $("modal-body").innerHTML = marked.parse(content);
+    $("modal-body").innerHTML = DOMPurify.sanitize(marked.parse(content));
     $("modal-view").classList.remove("hidden");
     $("modal-edit-view").classList.add("hidden");
     loadSidebar();
@@ -1573,7 +1573,7 @@ async function sendMessage() {
             loadTasks();
             renderCalendar();
         } else if (data.type === "task_deleted" || data.type === "event_deleted") {
-            const msg = `<div class="chat-response">${marked.parse(data.message)}</div>`;
+            const msg = `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`;
             if (wasApp === "notes") {
                 appendMsg("assistant", msg);
             } else {
@@ -1600,7 +1600,7 @@ async function sendMessage() {
             }
 
             if (data.type === "chat_response") {
-                appendMsg("assistant", `<div class="chat-response">${marked.parse(data.message)}</div>`);
+                appendMsg("assistant", `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`);
             } else if (data.type === "bookmark_saved") {
                 phCapture("bookmark_saved", { type: data.bookmark_type });
                 const el = appendMsg("assistant", renderBookmarkCard(data, text));
@@ -1624,7 +1624,7 @@ async function sendMessage() {
                 bindConfirmCard(el);
                 loadSidebar();
             } else if (data.type === "search_results") {
-                let html = `<div class="chat-response">${marked.parse(data.message)}</div>`;
+                let html = `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`;
                 if (data.results?.length) {
                     html += `<div class="sources-label">Sources</div><div class="results-grid">`;
                     for (const n of data.results) {

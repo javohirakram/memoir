@@ -7,3 +7,4 @@ data/
 notes/
 .vercel
 .DS_Store
+.gstack/
