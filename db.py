@@ -21,7 +21,9 @@ _db_initialized = False
 def _get_connection():
     global _conn
     if _conn is None or _conn.closed:
-        _conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        _conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor,
+                                  connect_timeout=10,
+                                  options="-c statement_timeout=15000")
         _conn.autocommit = False
         register_vector(_conn)
     return _conn

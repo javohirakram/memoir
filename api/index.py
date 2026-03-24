@@ -20,19 +20,29 @@ try:
 except ImportError:
     pass
 
-from openai import AsyncOpenAI
+# OpenAI client lazy-loaded on first AI call to reduce cold start
+_openai_mod = None
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import jwt
-try:
-    from google.oauth2 import id_token as google_id_token
-    from google.auth.transport import requests as google_requests
-except ImportError as _gauth_err:
-    google_id_token = None
-    google_requests = None
-    _gauth_import_error = str(_gauth_err)
+# Lazy-loaded on first Google auth call to reduce cold start
+google_id_token = None
+google_requests = None
+_gauth_import_error = None
+
+def _ensure_google_auth():
+    global google_id_token, google_requests, _gauth_import_error
+    if google_id_token is not None:
+        return
+    try:
+        from google.oauth2 import id_token as _gid
+        from google.auth.transport import requests as _greq
+        google_id_token = _gid
+        google_requests = _greq
+    except ImportError as e:
+        _gauth_import_error = str(e)
 
 from db import get_cursor, check_and_increment_rate_limit, get_user_plan
 
@@ -523,12 +533,16 @@ if _sentry_dsn:
         pass
 
 _api_key = os.environ.get("OPENAI_API_KEY", "")
-if not _api_key:
-    raise RuntimeError(
-        "OPENAI_API_KEY environment variable is not set. "
-        "Export it before starting the server: export OPENAI_API_KEY='sk-...'"
-    )
-openai_client = AsyncOpenAI(api_key=_api_key)
+openai_client = None
+
+def _get_openai():
+    global openai_client
+    if openai_client is None:
+        if not _api_key:
+            raise RuntimeError("OPENAI_API_KEY environment variable is not set.")
+        from openai import AsyncOpenAI
+        openai_client = AsyncOpenAI(api_key=_api_key)
+    return openai_client
 
 # ---------------------------------------------------------------------------
 # Auth config
@@ -614,7 +628,7 @@ def _add_to_history(user_id: str, role: str, content: str):
 
 async def generate_embedding(text: str) -> list[float]:
     """Generate a 1536-dim embedding using OpenAI text-embedding-3-small."""
-    response = await openai_client.embeddings.create(
+    response = await _get_openai().embeddings.create(
         model="text-embedding-3-small",
         input=text[:8000],
     )
@@ -1068,7 +1082,7 @@ async def generate_answer(question: str, notes: list) -> str:
         f"**{n['title']}** ({n['category']})\n{n['content']}"
         for n in notes
     )
-    response = await openai_client.chat.completions.create(
+    response = await _get_openai().chat.completions.create(
         model=AI_MODEL,
         max_tokens=1024,
         messages=[
@@ -1243,6 +1257,7 @@ class GoogleAuthRequest(BaseModel):
 @app.post("/api/auth/google")
 async def auth_google(req: GoogleAuthRequest):
     """Verify Google ID token, upsert user, return JWT."""
+    _ensure_google_auth()
     if google_id_token is None:
         return JSONResponse(status_code=500, content={"error": f"google-auth not available: {_gauth_import_error}"})
     if not GOOGLE_CLIENT_ID:
@@ -1592,7 +1607,7 @@ async def handle_message(request: Request, body: MessageRequest):
     messages.append({"role": "user", "content": body.message})
 
     try:
-        response = await openai_client.beta.chat.completions.parse(
+        response = await _get_openai().beta.chat.completions.parse(
             model=AI_MODEL,
             max_tokens=1024,
             messages=messages,
@@ -2651,7 +2666,7 @@ async def ai_transform_note(note_id: str, req: NoteAIRequest, request: Request):
         "previous_document": content,
     })
 
-    response = await openai_client.chat.completions.create(
+    response = await _get_openai().chat.completions.create(
         model=AI_MODEL,
         max_tokens=2048,
         response_format={"type": "json_object"},
