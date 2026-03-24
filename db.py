@@ -57,6 +57,7 @@ def get_cursor():
 
 _SCHEMA_SQL = """
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -124,6 +125,9 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
+CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
 
 CREATE TABLE IF NOT EXISTS feedback (
     id TEXT PRIMARY KEY,
@@ -172,110 +176,43 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 """
 
 
+_MIGRATION_SQL = """
+DO $$ BEGIN
+    -- Add end_date to events
+    BEGIN ALTER TABLE events ADD COLUMN end_date TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END;
+    -- Add user_id to notes/tasks/events (legacy migration)
+    BEGIN ALTER TABLE notes ADD COLUMN user_id TEXT NOT NULL DEFAULT '__legacy__'; EXCEPTION WHEN duplicate_column THEN NULL; END;
+    BEGIN ALTER TABLE tasks ADD COLUMN user_id TEXT NOT NULL DEFAULT '__legacy__'; EXCEPTION WHEN duplicate_column THEN NULL; END;
+    BEGIN ALTER TABLE events ADD COLUMN user_id TEXT NOT NULL DEFAULT '__legacy__'; EXCEPTION WHEN duplicate_column THEN NULL; END;
+    -- Add password_hash for email/password auth
+    BEGIN ALTER TABLE users ADD COLUMN password_hash TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END;
+    -- Make google_id nullable for email-only users
+    ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_notes_embedding
+    ON notes USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+CREATE INDEX IF NOT EXISTS idx_notes_title_trgm
+    ON notes USING gin (title gin_trgm_ops);
+"""
+
+
 def _init_db_once():
-    """Create tables on first use — safe to re-run (IF NOT EXISTS)."""
+    """Create tables and run migrations on first use (1-2 DB roundtrips)."""
     global _db_initialized
     if _db_initialized:
         return
     conn = _get_connection()
+    # Single roundtrip: create all tables + indexes
     with conn.cursor() as cur:
         cur.execute(_SCHEMA_SQL)
     conn.commit()
-
-    # Migration: add end_date column to events if missing
+    # Single roundtrip: all migrations in one DO block
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'events' AND column_name = 'end_date'"
-            )
-            if not cur.fetchone():
-                cur.execute("ALTER TABLE events ADD COLUMN end_date TEXT")
-        conn.commit()
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-
-    # Migration: add user_id column to existing tables if missing
-    for table in ("notes", "tasks", "events"):
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = %s AND column_name = 'user_id'",
-                    (table,)
-                )
-                if not cur.fetchone():
-                    cur.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT NOT NULL DEFAULT '__legacy__'")
-            conn.commit()
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-
-    # Create user_id indexes (safe to re-run)
-    for table in ("notes", "tasks", "events"):
-        try:
-            with conn.cursor() as cur:
-                cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)")
-            conn.commit()
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-
-    # Migration: add password_hash column to users for email/password auth
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'users' AND column_name = 'password_hash'"
-            )
-            if not cur.fetchone():
-                cur.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        conn.commit()
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-
-    # Migration: make google_id nullable for email-only users
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL
-            """)
-        conn.commit()
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-
-    # Migration: add unique index on email for email/password auth
-    try:
-        with conn.cursor() as cur:
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-        conn.commit()
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-
-    # Try HNSW index (may fail if not enough rows, that's OK)
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_notes_embedding
-                ON notes USING hnsw (embedding vector_cosine_ops)
-                WITH (m = 16, ef_construction = 64)
-            """)
+            cur.execute(_MIGRATION_SQL)
         conn.commit()
     except Exception:
         try:

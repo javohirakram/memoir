@@ -180,13 +180,51 @@ function showApp(user) {
         if (window.posthog && typeof posthog.identify === "function") posthog.identify(user.email, { name: user.name });
         if (window.Sentry) try { Sentry.setUser({ email: user.email }); } catch {}
     }
-    restoreChat();
-    loadSidebar();
-    loadTasks();
-    renderCalendar();
+    // Load all app data in a single request, fall back to individual calls
+    restoreChat(); // chat is separate (localStorage + own endpoint)
+    _loadDashboard().catch(() => {
+        // Fallback: load individually if batch fails
+        loadSidebar();
+        loadTasks();
+        renderCalendar();
+        refreshUndoStatus();
+        _loadPreferences();
+        _loadSubscription();
+    });
+}
+
+async function _loadDashboard() {
+    const r = await apiFetch("/api/dashboard");
+    if (!r.ok) throw new Error("dashboard failed");
+    const d = await r.json();
+    // Render recent notes
+    _renderRecent(d.recent || []);
+    // Render categories
+    _renderCategories(d.categories || []);
+    // Render tasks
+    _renderTasks(d.tasks || [], d.projects || []);
+    // Render calendar events
+    _renderCalendarEvents(d.events || [], d.tasks || []);
+    // Apply preferences
+    if (d.preferences) {
+        if (d.preferences.theme && d.preferences.theme !== document.documentElement.dataset.theme) {
+            document.documentElement.dataset.theme = d.preferences.theme;
+            localStorage.setItem("memoir-theme", d.preferences.theme);
+        }
+        if (!d.preferences.onboarding_done) {
+            setTimeout(() => openOverlay("onboarding-overlay"), 600);
+        }
+    }
+    // Apply subscription
+    if (d.subscription) {
+        const btn = document.getElementById("upgrade-btn");
+        const txt = document.getElementById("upgrade-btn-text");
+        if (d.subscription.plan === "pro" && btn && txt) {
+            txt.textContent = "Pro Plan";
+            btn.classList.add("active-plan");
+        }
+    }
     refreshUndoStatus();
-    _loadPreferences();
-    _loadSubscription();
 }
 
 async function _loadPreferences() {
@@ -573,12 +611,29 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.addEventListener("load", async () => {
-    // Fetch Google Client ID from backend
+    // Single request: fetch config + check auth together
     try {
-        const cfgRes = await fetch("/api/config");
-        const cfg = await cfgRes.json();
-        window.GOOGLE_CLIENT_ID = cfg.google_client_id;
-    } catch { /* will show login without button */ }
+        const token = getToken();
+        const headers = token ? { "Authorization": "Bearer " + token } : {};
+        const res = await fetch("/api/init", { headers });
+        const data = await res.json();
+        // Set config
+        if (data.config) window.GOOGLE_CLIENT_ID = data.config.google_client_id;
+        // Handle auth result
+        if (data.user) {
+            setStoredUser(data.user);
+            showApp(data.user);
+        } else {
+            // Token invalid or missing — clear and show login
+            if (token) clearToken();
+            showLogin();
+        }
+    } catch {
+        // Network error — use cached user if available
+        const stored = getStoredUser();
+        if (stored) { showApp(stored); }
+        else { showLogin(); }
+    }
 
     // Initialize GSI library (retry until loaded)
     if (!initGSI()) {
@@ -588,7 +643,6 @@ window.addEventListener("load", async () => {
             if (initGSI() || attempts >= 30) clearInterval(retryInterval);
         }, 200);
     }
-    checkAuth();
 });
 
 marked.setOptions({
@@ -715,7 +769,97 @@ async function loadCategories() {
     } catch {}
 }
 
-// loadSidebar() is called by showApp() after auth
+// Data-driven render helpers (used by /api/dashboard batch load)
+function _renderRecent(recent) {
+    const list = $("recent-list");
+    if (!recent.length) { list.innerHTML = '<div class="sidebar-empty">No activity yet</div>'; return; }
+    list.innerHTML = recent.slice(0, 8).map(n => `
+        <button class="recent-item" data-id="${ea(n.id)}">
+            <span class="recent-dot ${esc(n.category)}"></span>
+            <div class="recent-info">
+                <div class="recent-title">${esc(n.title)}</div>
+                <div class="recent-time">${timeAgo(n.created)}</div>
+            </div>
+        </button>`).join("");
+    list.querySelectorAll(".recent-item").forEach(btn => {
+        btn.onclick = async () => {
+            closeSidebar();
+            try {
+                const r2 = await apiFetch(`/api/note/${encodeURIComponent(btn.dataset.id)}`);
+                if (!r2.ok) return;
+                const note = await r2.json();
+                openNoteView(note);
+            } catch {}
+        };
+    });
+}
+function _renderCategories(categories) {
+    const list = $("category-list");
+    if (!categories.length) { list.innerHTML = '<div class="sidebar-empty">No notebooks yet</div>'; return; }
+    list.innerHTML = categories.map(c => `
+        <button class="cat-item" data-cat="${esc(c.name)}">
+            <span class="cat-icon ${esc(c.name)}">${CAT_LETTERS[c.name] || c.name[0].toUpperCase()}</span>
+            <span class="cat-name">${cap(c.name)}</span>
+            <span class="cat-count">${c.count}</span>
+        </button>`).join("");
+    list.querySelectorAll(".cat-item").forEach(b => b.onclick = () => openCategory(b.dataset.cat));
+}
+function _renderTasks(tasks, projects) {
+    renderTaskList(tasks, []);
+    // Render projects sidebar
+    const list = $("task-projects-list");
+    const filtered = projects.filter(p => p.name !== "inbox");
+    if (!filtered.length) { list.innerHTML = '<div class="sidebar-empty">No projects yet</div>'; return; }
+    list.innerHTML = filtered.map(p => `
+        <button class="cat-item ${currentTaskView === p.name ? 'active-project' : ''}" data-project="${esc(p.name)}">
+            <span class="cat-icon projects">${p.name[0].toUpperCase()}</span>
+            <span class="cat-name">${cap(p.name)}</span>
+            <span class="cat-count">${p.count}</span>
+        </button>`).join("");
+    list.querySelectorAll(".cat-item").forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll(".task-nav-item").forEach(i => i.classList.remove("active"));
+            currentTaskView = btn.dataset.project;
+            $("tasks-view-title").textContent = cap(currentTaskView);
+            loadTasks();
+        };
+    });
+}
+function _renderCalendarEvents(events, tasks) {
+    // Set calendar title based on current view
+    if (calView === "day") {
+        $("cal-title").textContent = calDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    } else if (calView === "week") {
+        const ws = new Date(calDate); ws.setDate(ws.getDate() - ws.getDay());
+        const we = new Date(ws); we.setDate(we.getDate() + 6);
+        const sameMonth = ws.getMonth() === we.getMonth();
+        $("cal-title").textContent = sameMonth
+            ? ws.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+            : ws.toLocaleDateString("en-US", { month: "short" }) + " – " + we.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    } else {
+        $("cal-title").textContent = calDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    }
+    // Merge events + tasks with due dates
+    calEvents = events || [];
+    const taskEvents = (tasks || []).filter(t => t.due_date).map(t => ({
+        id: "task-" + t.id,
+        title: t.title,
+        date: t.due_date,
+        start_time: t.due_time,
+        end_time: null,
+        all_day: !t.due_time,
+        color: t.completed ? "grey" : (t.priority === 1 ? "red" : t.priority === 2 ? "orange" : t.priority === 3 ? "blue" : "teal"),
+        is_task: true,
+        completed: t.completed,
+    }));
+    calEvents = calEvents.concat(taskEvents);
+    // Render view
+    if (calView === "month") renderMonthView();
+    else if (calView === "week") renderWeekView();
+    else renderDayView();
+    renderMiniCalendar();
+}
+// loadSidebar() is called by showApp() after auth (fallback path)
 
 /* ================================================================
    Undo / Redo system (universal)

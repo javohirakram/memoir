@@ -20,7 +20,7 @@ try:
 except ImportError:
     pass
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -528,7 +528,7 @@ if not _api_key:
         "OPENAI_API_KEY environment variable is not set. "
         "Export it before starting the server: export OPENAI_API_KEY='sk-...'"
     )
-openai_client = OpenAI(api_key=_api_key)
+openai_client = AsyncOpenAI(api_key=_api_key)
 
 # ---------------------------------------------------------------------------
 # Auth config
@@ -612,9 +612,9 @@ def _add_to_history(user_id: str, role: str, content: str):
 # Embedding helpers
 # ---------------------------------------------------------------------------
 
-def generate_embedding(text: str) -> list[float]:
+async def generate_embedding(text: str) -> list[float]:
     """Generate a 1536-dim embedding using OpenAI text-embedding-3-small."""
-    response = openai_client.embeddings.create(
+    response = await openai_client.embeddings.create(
         model="text-embedding-3-small",
         input=text[:8000],
     )
@@ -625,11 +625,11 @@ def generate_embedding(text: str) -> list[float]:
 # Note storage helpers (all DB-backed)
 # ---------------------------------------------------------------------------
 
-def save_note(note_id: str, category: str, title: str, content: str,
+async def save_note(note_id: str, category: str, title: str, content: str,
               original_text: str = "", is_list: bool = False,
               list_name: str | None = None, user_id: str = ""):
     """Insert or update a note with its embedding."""
-    embedding = generate_embedding(content)
+    embedding = await generate_embedding(content)
     with get_cursor() as cur:
         cur.execute("""
             INSERT INTO notes (id, user_id, title, category, content, original_text,
@@ -656,7 +656,7 @@ def get_note_by_id_from_db(note_id: str, user_id: str = "") -> dict | None:
     return dict(row) if row else None
 
 
-def append_to_note_content(note_id: str, new_content: str, user_id: str = "") -> str | None:
+async def append_to_note_content(note_id: str, new_content: str, user_id: str = "") -> str | None:
     """Append content to an existing note. Returns the full updated content."""
     with get_cursor() as cur:
         cur.execute("SELECT content FROM notes WHERE id = %s AND user_id = %s", (note_id, user_id))
@@ -664,7 +664,7 @@ def append_to_note_content(note_id: str, new_content: str, user_id: str = "") ->
         if not row:
             return None
         updated = row["content"].strip() + "\n\n" + new_content
-        embedding = generate_embedding(updated)
+        embedding = await generate_embedding(updated)
         cur.execute("""
             UPDATE notes SET content = %s, embedding = %s, updated = NOW()
             WHERE id = %s AND user_id = %s
@@ -707,7 +707,7 @@ def find_existing_list(list_name: str, user_id: str = "") -> dict | None:
     return None
 
 
-def append_to_list_content(note_id: str, items: list[str], user_id: str = "") -> str:
+async def append_to_list_content(note_id: str, items: list[str], user_id: str = "") -> str:
     """Append bullet items to a list note. Returns updated content."""
     new_lines = "".join(f"- {item}\n" for item in items)
     with get_cursor() as cur:
@@ -716,7 +716,7 @@ def append_to_list_content(note_id: str, items: list[str], user_id: str = "") ->
         if not row:
             return new_lines.strip()
         updated = row["content"] + "\n" + new_lines
-        embedding = generate_embedding(updated)
+        embedding = await generate_embedding(updated)
         cur.execute("""
             UPDATE notes SET content = %s, embedding = %s, updated = NOW()
             WHERE id = %s AND user_id = %s
@@ -724,7 +724,7 @@ def append_to_list_content(note_id: str, items: list[str], user_id: str = "") ->
     return updated
 
 
-def search_notes(query: str, n_results: int = 5, max_distance: float = 0.60, user_id: str = "") -> list:
+async def search_notes(query: str, n_results: int = 5, max_distance: float = 0.60, user_id: str = "") -> list:
     """Semantic search using pgvector cosine distance, scoped to user."""
     with get_cursor() as cur:
         cur.execute("SELECT COUNT(*) as cnt FROM notes WHERE user_id = %s", (user_id,))
@@ -732,7 +732,7 @@ def search_notes(query: str, n_results: int = 5, max_distance: float = 0.60, use
     if cnt == 0:
         return []
 
-    query_embedding = generate_embedding(query)
+    query_embedding = await generate_embedding(query)
     with get_cursor() as cur:
         cur.execute("""
             SELECT id, title, category, content, created,
@@ -767,43 +767,43 @@ def find_note_by_name(name: str, user_id: str = "") -> dict | None:
     if result:
         return result
 
-    # Fall back to title search across all notes
+    # SQL-based fuzzy title search using pg_trgm similarity
+    query_clean = name.lower().replace("-", " ")
     with get_cursor() as cur:
-        cur.execute("SELECT id, title, category, content, original_text, is_list, list_name FROM notes WHERE user_id = %s", (user_id,))
-        rows = cur.fetchall()
-    if not rows:
-        return None
+        # Try exact case-insensitive match first, then ILIKE substring, then trigram similarity
+        cur.execute("""
+            SELECT id, title, category, content, original_text, is_list, list_name,
+                   CASE
+                       WHEN LOWER(title) = %s THEN 100
+                       WHEN LOWER(COALESCE(REPLACE(list_name, '-', ' '), '')) = %s THEN 100
+                       WHEN LOWER(title) ILIKE '%%' || %s || '%%' THEN 80
+                       WHEN LOWER(COALESCE(REPLACE(list_name, '-', ' '), '')) ILIKE '%%' || %s || '%%' THEN 70
+                       ELSE GREATEST(similarity(LOWER(title), %s), similarity(LOWER(COALESCE(list_name, '')), %s)) * 100
+                   END AS score
+            FROM notes
+            WHERE user_id = %s
+              AND (
+                  LOWER(title) = %s
+                  OR LOWER(COALESCE(REPLACE(list_name, '-', ' '), '')) = %s
+                  OR LOWER(title) ILIKE '%%' || %s || '%%'
+                  OR LOWER(COALESCE(REPLACE(list_name, '-', ' '), '')) ILIKE '%%' || %s || '%%'
+                  OR similarity(LOWER(title), %s) > 0.3
+              )
+            ORDER BY score DESC
+            LIMIT 1
+        """, (query_clean, query_clean, query_clean, query_clean, query_clean, query_clean,
+              user_id, query_clean, query_clean, query_clean, query_clean, query_clean))
+        row = cur.fetchone()
+    if row and row["score"] >= 60:
+        return {
+            "id": row["id"],
+            "document": row["content"],
+            "metadata": {k: row[k] for k in ("id", "title", "category", "content", "original_text", "is_list", "list_name")},
+        }
+    return None
 
-    query_lower = name.lower().replace("-", " ")
-    best = None
-    best_score = 0
-    for row in rows:
-        note_title = row["title"].lower()
-        ln = (row["list_name"] or "").replace("-", " ")
-        score = 0
-        if query_lower == note_title or query_lower == ln:
-            score = 100
-        elif query_lower in note_title or note_title in query_lower:
-            score = 80
-        elif query_lower in ln or ln in query_lower:
-            score = 70
-        else:
-            q_words = set(query_lower.split())
-            t_words = set(note_title.split())
-            overlap = q_words & t_words
-            if overlap:
-                score = len(overlap) * 20
-        if score > best_score:
-            best_score = score
-            best = {
-                "id": row["id"],
-                "document": row["content"],
-                "metadata": dict(row),
-            }
-    return best if best_score >= 60 else None
 
-
-def remove_from_list_content(note_id: str, items_to_remove: list[str], user_id: str = "") -> tuple[str, list[str]]:
+async def remove_from_list_content(note_id: str, items_to_remove: list[str], user_id: str = "") -> tuple[str, list[str]]:
     """Remove items from a list note. Returns (updated_content, actually_removed)."""
     with get_cursor() as cur:
         cur.execute("SELECT content FROM notes WHERE id = %s AND user_id = %s", (note_id, user_id))
@@ -835,7 +835,7 @@ def remove_from_list_content(note_id: str, items_to_remove: list[str], user_id: 
 
     new_body = "\n".join(kept)
     if removed:
-        embedding = generate_embedding(new_body)
+        embedding = await generate_embedding(new_body)
         with get_cursor() as cur:
             cur.execute("""
                 UPDATE notes SET content = %s, embedding = %s, updated = NOW()
@@ -1017,7 +1017,7 @@ def _render_bookmark_sections(header: str, sections: dict[str, list[str]]) -> st
     return "\n".join(parts)
 
 
-def append_bookmark_content(note_id: str, url: str, title: str, btype: str, desc: str, user_id: str = "") -> str:
+async def append_bookmark_content(note_id: str, url: str, title: str, btype: str, desc: str, user_id: str = "") -> str:
     """Add or update a bookmark entry, organized by type. Returns updated content."""
     with get_cursor() as cur:
         cur.execute("SELECT content FROM notes WHERE id = %s AND user_id = %s", (note_id, user_id))
@@ -1053,7 +1053,7 @@ def append_bookmark_content(note_id: str, url: str, title: str, btype: str, desc
 
     updated = _render_bookmark_sections(header, sections)
 
-    embedding = generate_embedding(updated)
+    embedding = await generate_embedding(updated)
     with get_cursor() as cur:
         cur.execute("""
             UPDATE notes SET content = %s, embedding = %s, updated = NOW()
@@ -1062,13 +1062,13 @@ def append_bookmark_content(note_id: str, url: str, title: str, btype: str, desc
     return updated
 
 
-def generate_answer(question: str, notes: list) -> str:
+async def generate_answer(question: str, notes: list) -> str:
     """Generate a conversational answer based on found notes."""
     context = "\n\n---\n\n".join(
         f"**{n['title']}** ({n['category']})\n{n['content']}"
         for n in notes
     )
-    response = openai_client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model=AI_MODEL,
         max_tokens=1024,
         messages=[
@@ -1114,9 +1114,9 @@ def _capture_note_snapshot(note_id: str, user_id: str = "") -> dict | None:
     }
 
 
-def _restore_snapshot(snap: dict, user_id: str = ""):
+async def _restore_snapshot(snap: dict, user_id: str = ""):
     """Restore a note to a previously captured snapshot state."""
-    save_note(
+    await save_note(
         note_id=snap["note_id"],
         category=snap["category"],
         title=snap["title"],
@@ -1128,7 +1128,7 @@ def _restore_snapshot(snap: dict, user_id: str = ""):
     )
 
 
-def _do_undo(action: dict, user_id: str = "") -> dict | None:
+async def _do_undo(action: dict, user_id: str = "") -> dict | None:
     """Execute an undo action and return a redo entry (or None)."""
     atype = action["type"]
 
@@ -1149,7 +1149,7 @@ def _do_undo(action: dict, user_id: str = "") -> dict | None:
         note = get_note_by_id_from_db(note_id, user_id)
         if note:
             title = prev_title or note["title"]
-            embedding = generate_embedding(prev_doc)
+            embedding = await generate_embedding(prev_doc)
             with get_cursor() as cur:
                 cur.execute("""
                     UPDATE notes SET content = %s, title = %s, embedding = %s, updated = NOW()
@@ -1162,13 +1162,13 @@ def _do_undo(action: dict, user_id: str = "") -> dict | None:
     elif atype == "item_moved":
         src_snap = _capture_note_snapshot(action["source_id"], user_id)
         dest_snap = _capture_note_snapshot(action["dest_id"], user_id)
-        src_emb = generate_embedding(action["source_prev_doc"])
+        src_emb = await generate_embedding(action["source_prev_doc"])
         with get_cursor() as cur:
             cur.execute("""
                 UPDATE notes SET content = %s, embedding = %s, updated = NOW()
                 WHERE id = %s AND user_id = %s
             """, (action["source_prev_doc"], src_emb, action["source_id"], user_id))
-        dest_emb = generate_embedding(action["dest_prev_doc"])
+        dest_emb = await generate_embedding(action["dest_prev_doc"])
         with get_cursor() as cur:
             cur.execute("""
                 UPDATE notes SET content = %s, embedding = %s, updated = NOW()
@@ -1183,7 +1183,7 @@ def _do_undo(action: dict, user_id: str = "") -> dict | None:
     elif atype == "item_moved_new_dest":
         src_snap = _capture_note_snapshot(action["source_id"], user_id)
         dest_snap = _capture_note_snapshot(action["dest_id"], user_id)
-        src_emb = generate_embedding(action["source_prev_doc"])
+        src_emb = await generate_embedding(action["source_prev_doc"])
         with get_cursor() as cur:
             cur.execute("""
                 UPDATE notes SET content = %s, embedding = %s, updated = NOW()
@@ -1200,18 +1200,18 @@ def _do_undo(action: dict, user_id: str = "") -> dict | None:
     return None
 
 
-def _do_redo(entry: dict, user_id: str = ""):
+async def _do_redo(entry: dict, user_id: str = ""):
     """Execute a redo and push a corresponding undo entry."""
     rtype = entry["redo_type"]
     undo_stack = undo_stacks.setdefault(user_id, [])
 
     if rtype == "recreate":
-        _restore_snapshot(entry["snapshot"], user_id)
+        await _restore_snapshot(entry["snapshot"], user_id)
         undo_stack.append(entry["original_action"])
 
     elif rtype == "restore":
         current_snap = _capture_note_snapshot(entry["snapshot"]["note_id"], user_id)
-        _restore_snapshot(entry["snapshot"], user_id)
+        await _restore_snapshot(entry["snapshot"], user_id)
         undo_entry = dict(entry["original_action"])
         if current_snap:
             undo_entry["previous_document"] = current_snap["document"]
@@ -1219,16 +1219,16 @@ def _do_redo(entry: dict, user_id: str = ""):
 
     elif rtype == "restore_pair":
         if entry.get("source_snapshot"):
-            _restore_snapshot(entry["source_snapshot"], user_id)
+            await _restore_snapshot(entry["source_snapshot"], user_id)
         if entry.get("dest_snapshot"):
-            _restore_snapshot(entry["dest_snapshot"], user_id)
+            await _restore_snapshot(entry["dest_snapshot"], user_id)
         undo_stack.append(entry["original_action"])
 
     elif rtype == "restore_and_recreate":
         if entry.get("source_snapshot"):
-            _restore_snapshot(entry["source_snapshot"], user_id)
+            await _restore_snapshot(entry["source_snapshot"], user_id)
         if entry.get("dest_snapshot"):
-            _restore_snapshot(entry["dest_snapshot"], user_id)
+            await _restore_snapshot(entry["dest_snapshot"], user_id)
         undo_stack.append(entry["original_action"])
 
 
@@ -1305,6 +1305,97 @@ async def auth_me(request: Request):
     if not row:
         return _auth_error()
     return {"user": {"name": row["name"], "email": row["email"], "picture": row["picture"]}}
+
+
+@app.get("/api/init")
+async def app_init(request: Request):
+    """Combined config + auth check in a single request (performance optimization)."""
+    config = {"google_client_id": GOOGLE_CLIENT_ID}
+    user = None
+    try:
+        user_id = get_current_user(request)
+        with get_cursor() as cur:
+            cur.execute("SELECT id, email, name, picture FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+        if row:
+            user = {"name": row["name"], "email": row["email"], "picture": row["picture"]}
+    except ValueError:
+        pass
+    return {"config": config, "user": user}
+
+
+@app.get("/api/dashboard")
+async def dashboard(request: Request):
+    """Batch endpoint: returns all initial app data in one request."""
+    try:
+        user_id = get_current_user(request)
+    except ValueError:
+        return _auth_error()
+    today = datetime.now().strftime("%Y-%m-%d")
+    with get_cursor() as cur:
+        # Recent notes
+        cur.execute("""
+            SELECT id, title, category, created FROM notes
+            WHERE user_id = %s ORDER BY created DESC LIMIT 10
+        """, (user_id,))
+        recent = [{"id": r["id"], "title": r["title"], "category": r["category"],
+                   "created": str(r["created"])} for r in cur.fetchall()]
+        # Categories
+        cur.execute("""
+            SELECT category, COUNT(*) as count FROM notes
+            WHERE user_id = %s GROUP BY category ORDER BY category
+        """, (user_id,))
+        categories = [{"name": r["category"], "count": r["count"]} for r in cur.fetchall()]
+        # Tasks (uncompleted, default view)
+        cur.execute("""
+            SELECT * FROM tasks WHERE user_id = %s AND completed = FALSE
+            ORDER BY priority, sort_order LIMIT 100
+        """, (user_id,))
+        tasks = []
+        for r in cur.fetchall():
+            t = dict(r)
+            if isinstance(t.get("labels"), str):
+                t["labels"] = json.loads(t["labels"])
+            for k in ("created", "completed_at"):
+                if t.get(k) is not None:
+                    t[k] = str(t[k])
+            tasks.append(t)
+        # Task projects
+        cur.execute("""
+            SELECT project,
+                   COUNT(*) FILTER (WHERE completed = FALSE) as count,
+                   COUNT(*) FILTER (WHERE completed = TRUE) as completed
+            FROM tasks WHERE user_id = %s GROUP BY project
+        """, (user_id,))
+        projects = [{"name": r["project"], "count": r["count"], "completed": r["completed"]}
+                    for r in cur.fetchall()]
+        # Events (current month)
+        month = datetime.now().strftime("%Y-%m")
+        cur.execute("""
+            SELECT * FROM events WHERE user_id = %s AND date LIKE %s
+            ORDER BY date, start_time
+        """, (user_id, month + "%"))
+        events = []
+        for r in cur.fetchall():
+            e = dict(r)
+            if e.get("created") is not None:
+                e["created"] = str(e["created"])
+            events.append(e)
+        # Preferences
+        cur.execute("SELECT theme, onboarding_done FROM user_preferences WHERE user_id = %s", (user_id,))
+        pref_row = cur.fetchone()
+        prefs = {"theme": pref_row["theme"], "onboarding_done": pref_row["onboarding_done"]} if pref_row else {"theme": "dark", "onboarding_done": False}
+        # Subscription
+        cur.execute("SELECT plan, status, current_period_end FROM subscriptions WHERE user_id = %s", (user_id,))
+        sub_row = cur.fetchone()
+        subscription = {"plan": sub_row["plan"] if sub_row else "free",
+                        "status": sub_row["status"] if sub_row else "active",
+                        "current_period_end": str(sub_row["current_period_end"]) if sub_row and sub_row["current_period_end"] else None}
+    return {
+        "recent": recent, "categories": categories, "tasks": tasks,
+        "projects": projects, "events": events, "preferences": prefs,
+        "subscription": subscription,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1501,7 +1592,7 @@ async def handle_message(request: Request, body: MessageRequest):
     messages.append({"role": "user", "content": body.message})
 
     try:
-        response = openai_client.beta.chat.completions.parse(
+        response = await openai_client.beta.chat.completions.parse(
             model=AI_MODEL,
             max_tokens=1024,
             messages=messages,
@@ -1522,17 +1613,17 @@ async def handle_message(request: Request, body: MessageRequest):
 
     action_id = str(uuid.uuid4())
     _add_to_history(user_id, "user", body.message)
-    chat_resp = _handle_intent(result, action_id, body.message, user_id)
+    chat_resp = await _handle_intent(result, action_id, body.message, user_id)
     _add_to_history(user_id, "assistant", f"[{result.intent}] {chat_resp.message}")
     return chat_resp
 
 
-def _handle_intent(result: NoteResponse, action_id: str, original_message: str, user_id: str = "") -> ChatResponse:
+async def _handle_intent(result: NoteResponse, action_id: str, original_message: str, user_id: str = "") -> ChatResponse:
     """Process a parsed intent and return the appropriate ChatResponse."""
 
     if result.intent == "add_note":
         note_id = str(uuid.uuid4())
-        save_note(
+        await save_note(
             note_id=note_id, category=result.category, title=result.title,
             content=result.polished_content, original_text=original_message,
             user_id=user_id,
@@ -1551,7 +1642,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             note_id = str(uuid.uuid4())
             cat = result.category or "personal"
             ttl = result.title or "Untitled"
-            save_note(note_id=note_id, category=cat, title=ttl,
+            await save_note(note_id=note_id, category=cat, title=ttl,
                       content=result.append_content, original_text=original_message,
                       user_id=user_id)
             _push_undo(user_id, {"id": action_id, "type": "note_created", "note_id": note_id})
@@ -1562,7 +1653,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             )
 
         prev_doc = existing["content"]
-        append_to_note_content(target_id, result.append_content, user_id)
+        await append_to_note_content(target_id, result.append_content, user_id)
         _push_undo(user_id, {"id": action_id, "type": "note_appended",
                      "note_id": target_id, "previous_document": prev_doc})
         return ChatResponse(
@@ -1582,7 +1673,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
 
         prev_doc = existing["content"]
         new_content = result.rewrite_content
-        embedding = generate_embedding(new_content)
+        embedding = await generate_embedding(new_content)
         with get_cursor() as cur:
             cur.execute("""
                 UPDATE notes SET content = %s, embedding = %s, updated = NOW()
@@ -1603,7 +1694,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
 
         if existing:
             prev_doc = existing["document"]
-            append_to_list_content(existing["id"], items, user_id)
+            await append_to_list_content(existing["id"], items, user_id)
             _push_undo(user_id, {"id": action_id, "type": "list_appended",
                          "note_id": existing["id"], "previous_document": prev_doc})
             return ChatResponse(
@@ -1616,7 +1707,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             note_id = str(uuid.uuid4())
             display_name = result.list_name.replace("-", " ").title()
             content = "\n".join(f"- {item}" for item in items)
-            save_note(
+            await save_note(
                 note_id=note_id, category=result.list_category, title=display_name,
                 content=content, original_text=original_message,
                 is_list=True, list_name=result.list_name, user_id=user_id,
@@ -1639,7 +1730,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             )
 
         prev_doc = existing["document"]
-        updated_content, actually_removed = remove_from_list_content(existing["id"], items, user_id)
+        updated_content, actually_removed = await remove_from_list_content(existing["id"], items, user_id)
 
         if not actually_removed:
             return ChatResponse(
@@ -1694,13 +1785,13 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             clean_items = items if items else [task_source["title"]]
             dest = find_note_by_name(result.move_dest_name or "", user_id)
             if dest:
-                append_to_list_content(dest["id"], clean_items, user_id)
+                await append_to_list_content(dest["id"], clean_items, user_id)
             else:
                 dest_slug = (result.move_dest_name or "misc").lower().replace(" ", "-")
                 dest_display = dest_slug.replace("-", " ").title()
                 dest_note_id = str(uuid.uuid4())
                 dest_content = "\n".join(f"- {item}" for item in clean_items)
-                save_note(note_id=dest_note_id, category="personal", title=dest_display,
+                await save_note(note_id=dest_note_id, category="personal", title=dest_display,
                           content=dest_content, original_text="", is_list=True,
                           list_name=dest_slug, user_id=user_id)
                 dest = {"id": dest_note_id, "metadata": {"title": dest_display, "category": "personal"}}
@@ -1722,7 +1813,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             )
 
         prev_source_doc = source["document"]
-        updated_source, actually_removed = remove_from_list_content(source["id"], items, user_id)
+        updated_source, actually_removed = await remove_from_list_content(source["id"], items, user_id)
 
         if not actually_removed:
             return ChatResponse(
@@ -1743,7 +1834,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
 
         if dest:
             prev_dest_doc = dest["document"]
-            append_to_list_content(dest["id"], clean_items, user_id)
+            await append_to_list_content(dest["id"], clean_items, user_id)
         else:
             dest_created = True
             dest_slug = (result.move_dest_name or "misc").lower().replace(" ", "-")
@@ -1751,7 +1842,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             dest_display = dest_slug.replace("-", " ").title()
             dest_note_id = str(uuid.uuid4())
             dest_content = "\n".join(f"- {item}" for item in clean_items)
-            save_note(
+            await save_note(
                 note_id=dest_note_id, category=dest_category, title=dest_display,
                 content=dest_content, original_text=original_message,
                 is_list=True, list_name=dest_slug, user_id=user_id,
@@ -1807,7 +1898,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
         existing = find_existing_list("bookmarks", user_id)
         if existing:
             prev_doc = existing["document"]
-            updated_content = append_bookmark_content(existing["id"], url, title, btype, desc, user_id)
+            updated_content = await append_bookmark_content(existing["id"], url, title, btype, desc, user_id)
             _push_undo(user_id, {"id": action_id, "type": "list_appended",
                          "note_id": existing["id"], "previous_document": prev_doc})
             return ChatResponse(
@@ -1824,7 +1915,7 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
             sections = {s: [] for s in _BOOKMARK_SECTIONS}
             sections[section_key].append(entry)
             content = _render_bookmark_sections(header, sections)
-            save_note(
+            await save_note(
                 note_id=note_id, category="personal", title="Bookmarks",
                 content=content, original_text=original_message,
                 is_list=True, list_name="bookmarks", user_id=user_id,
@@ -2026,16 +2117,16 @@ def _handle_intent(result: NoteResponse, action_id: str, original_message: str, 
         )
 
     elif result.intent == "search":
-        notes = search_notes(result.search_query, user_id=user_id)
+        notes = await search_notes(result.search_query, user_id=user_id)
         if not notes:
-            notes = search_notes(result.search_query, max_distance=0.80, user_id=user_id)
+            notes = await search_notes(result.search_query, max_distance=0.80, user_id=user_id)
         if not notes:
             return ChatResponse(
                 type="search_results",
                 message="I couldn't find any notes related to that. Try adding some first!",
                 results=[],
             )
-        answer = generate_answer(original_message, notes)
+        answer = await generate_answer(original_message, notes)
         return ChatResponse(
             type="search_results",
             message=answer,
@@ -2526,7 +2617,7 @@ async def edit_note(note_id: str, req: EditNoteRequest, request: Request):
         "previous_title": note["title"],
     })
 
-    embedding = generate_embedding(new_content)
+    embedding = await generate_embedding(new_content)
     with get_cursor() as cur:
         cur.execute("""
             UPDATE notes SET title = %s, content = %s, embedding = %s, updated = NOW()
@@ -2560,7 +2651,7 @@ async def ai_transform_note(note_id: str, req: NoteAIRequest, request: Request):
         "previous_document": content,
     })
 
-    response = openai_client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model=AI_MODEL,
         max_tokens=2048,
         response_format={"type": "json_object"},
@@ -2604,7 +2695,7 @@ async def ai_transform_note(note_id: str, req: NoteAIRequest, request: Request):
     else:
         new_content = ai_content
 
-    embedding = generate_embedding(new_content)
+    embedding = await generate_embedding(new_content)
     with get_cursor() as cur:
         cur.execute("""
             UPDATE notes SET content = %s, embedding = %s, updated = NOW()
@@ -2675,7 +2766,7 @@ async def undo_action(action_id: str, request: Request):
     if not action:
         return JSONResponse(status_code=404,
                             content={"error": "Action expired or already undone"})
-    redo_entry = _do_undo(action, user_id)
+    redo_entry = await _do_undo(action, user_id)
     if redo_entry:
         redo_stack.append(redo_entry)
     return {"ok": True, "undone": action["type"],
@@ -2693,7 +2784,7 @@ async def undo_last(request: Request):
     if not undo_stack:
         return JSONResponse(status_code=404, content={"error": "Nothing to undo"})
     action = undo_stack.pop()
-    redo_entry = _do_undo(action, user_id)
+    redo_entry = await _do_undo(action, user_id)
     if redo_entry:
         redo_stack.append(redo_entry)
     return {"ok": True, "undone": action["type"],
@@ -2711,7 +2802,7 @@ async def redo_last(request: Request):
     if not redo_stack:
         return JSONResponse(status_code=404, content={"error": "Nothing to redo"})
     entry = redo_stack.pop()
-    _do_redo(entry, user_id)
+    await _do_redo(entry, user_id)
     return {"ok": True, "can_undo": len(undo_stack) > 0, "can_redo": len(redo_stack) > 0}
 
 
