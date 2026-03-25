@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+  <defs>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#c8956c"/>
+      <stop offset="50%" style="stop-color:#e8c9a8"/>
+      <stop offset="100%" style="stop-color:#c8956c"/>
+    </linearGradient>
+  </defs>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&amp;display=swap');
+  </style>
+  <text x="400" y="145" text-anchor="middle" font-family="'Playfair Display', Georgia, serif" font-weight="700" font-size="140" fill="url(#gold)" letter-spacing="6">Memoir</text>
+</svg>

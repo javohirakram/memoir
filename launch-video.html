@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>Memoir — Launch Video</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0c;
+    --bg-surface: #141418;
+    --text: #f0ece4;
+    --text-dim: #8a8680;
+    --accent: #c8956c;
+    --accent-glow: rgba(200, 149, 108, 0.3);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .scene {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    pointer-events: none;
+  }
+  .scene.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Scene 1: The Problem */
+  .scene-problem .app-icons {
+    display: flex;
+    gap: 60px;
+    margin-bottom: 80px;
+  }
+  .scene-problem .app-icon {
+    width: 120px;
+    height: 120px;
+    border-radius: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    opacity: 0;
+    transform: translateY(30px);
+    animation: iconIn 0.6s ease forwards;
+    position: relative;
+  }
+  .scene-problem .app-icon:nth-child(1) { background: #1a3a5c; animation-delay: 0.3s; }
+  .scene-problem .app-icon:nth-child(2) { background: #3a1a1a; animation-delay: 0.6s; }
+  .scene-problem .app-icon:nth-child(3) { background: #1a3a2a; animation-delay: 0.9s; }
+
+  .scene-problem .app-label {
+    font-size: 18px;
+    color: var(--text-dim);
+    position: absolute;
+    bottom: -35px;
+    white-space: nowrap;
+    font-weight: 400;
+  }
+
+  @keyframes iconIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .scene-problem h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 52px;
+    font-weight: 400;
+    color: var(--text);
+    opacity: 0;
+    animation: fadeUp 0.8s ease 1.5s forwards;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .scene-problem h2 em {
+    color: var(--accent);
+    font-style: normal;
+  }
+
+  /* Scene 2: Cracks */
+  .scene-cracks .crack-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 64px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.5;
+    opacity: 0;
+    animation: fadeUp 0.8s ease 0.3s forwards;
+  }
+  .scene-cracks .crack-text em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  /* Scene 3: What if */
+  .scene-whatif .whatif-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 56px;
+    font-weight: 400;
+    text-align: center;
+    line-height: 1.5;
+    opacity: 0;
+    animation: fadeUp 0.8s ease 0.3s forwards;
+  }
+  .scene-whatif .cursor-blink {
+    display: inline-block;
+    width: 3px;
+    height: 56px;
+    background: var(--accent);
+    margin-left: 8px;
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* Scene 4: Meet Memoir */
+  .scene-reveal .logo-reveal {
+    opacity: 0;
+    animation: logoIn 1.2s ease 0.2s forwards;
+  }
+  .scene-reveal .logo-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 120px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    background: linear-gradient(135deg, var(--accent), #e8c9a8, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .scene-reveal .logo-glow {
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+    filter: blur(60px);
+    opacity: 0;
+    animation: glowIn 1.5s ease 0.5s forwards;
+    z-index: -1;
+  }
+  .scene-reveal .tagline {
+    font-size: 28px;
+    color: var(--text-dim);
+    margin-top: 24px;
+    opacity: 0;
+    animation: fadeUp 0.8s ease 1s forwards;
+    font-weight: 300;
+    letter-spacing: 2px;
+  }
+
+  @keyframes logoIn {
+    0% { opacity: 0; transform: scale(0.8); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes glowIn {
+    to { opacity: 1; }
+  }
+
+  /* Scene 5: Demo */
+  .scene-demo {
+    padding: 60px 120px;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .demo-mockup {
+    width: 100%;
+    height: 100%;
+    background: var(--bg-surface);
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    animation: fadeUp 0.6s ease 0.2s forwards;
+  }
+  .demo-topbar {
+    height: 64px;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 32px;
+    gap: 16px;
+  }
+  .demo-topbar .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .demo-topbar .dot:nth-child(1) { background: #ff5f57; }
+  .demo-topbar .dot:nth-child(2) { background: #febc2e; }
+  .demo-topbar .dot:nth-child(3) { background: #28c840; }
+  .demo-topbar .demo-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    color: var(--accent);
+    margin-left: 20px;
+    font-weight: 600;
+  }
+
+  .demo-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 40px;
+    gap: 20px;
+    overflow: hidden;
+  }
+
+  .demo-message {
+    max-width: 70%;
+    padding: 16px 24px;
+    border-radius: 16px;
+    font-size: 20px;
+    line-height: 1.5;
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  .demo-message.user {
+    align-self: flex-end;
+    background: rgba(200, 149, 108, 0.15);
+    border: 1px solid rgba(200, 149, 108, 0.25);
+    color: var(--text);
+  }
+  .demo-message.ai {
+    align-self: flex-start;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text);
+  }
+  .demo-message .badge {
+    display: inline-block;
+    font-size: 13px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    margin-right: 8px;
+    font-weight: 500;
+  }
+  .badge-note { background: rgba(100, 149, 237, 0.2); color: #6495ed; }
+  .badge-task { background: rgba(200, 149, 108, 0.2); color: var(--accent); }
+  .badge-event { background: rgba(108, 200, 149, 0.2); color: #6cc895; }
+
+  .demo-input-bar {
+    margin: 0 40px 40px;
+    height: 64px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    font-size: 18px;
+    color: var(--text-dim);
+  }
+  .demo-input-bar .typing-cursor {
+    width: 2px;
+    height: 24px;
+    background: var(--accent);
+    animation: blink 1s step-end infinite;
+    margin-left: 4px;
+  }
+
+  /* Scene 6: Features */
+  .scene-features {
+    gap: 60px;
+  }
+  .scene-features h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 56px;
+    font-weight: 400;
+    opacity: 0;
+    animation: fadeUp 0.8s ease 0.2s forwards;
+  }
+  .feature-grid {
+    display: flex;
+    gap: 48px;
+  }
+  .feature-card {
+    width: 340px;
+    padding: 48px 36px;
+    background: var(--bg-surface);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  .feature-card:nth-child(1) { animation: fadeUp 0.6s ease 0.5s forwards; }
+  .feature-card:nth-child(2) { animation: fadeUp 0.6s ease 0.7s forwards; }
+  .feature-card:nth-child(3) { animation: fadeUp 0.6s ease 0.9s forwards; }
+
+  .feature-card .icon { font-size: 48px; margin-bottom: 24px; }
+  .feature-card h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--accent);
+  }
+  .feature-card p {
+    font-size: 17px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* Scene 7: CTA */
+  .scene-cta { gap: 40px; }
+  .scene-cta .cta-logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 96px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), #e8c9a8, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    opacity: 0;
+    animation: fadeUp 0.8s ease 0.2s forwards;
+  }
+  .scene-cta .cta-button {
+    padding: 20px 64px;
+    background: var(--accent);
+    color: var(--bg);
+    font-family: 'Inter', sans-serif;
+    font-size: 24px;
+    font-weight: 600;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    opacity: 0;
+    animation: fadeUp 0.8s ease 0.6s forwards;
+    letter-spacing: 1px;
+  }
+  .scene-cta .cta-sub {
+    font-size: 20px;
+    color: var(--text-dim);
+    opacity: 0;
+    animation: fadeUp 0.8s ease 1s forwards;
+    font-weight: 300;
+  }
+  .scene-cta .glow {
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+    filter: blur(80px);
+    opacity: 0;
+    animation: glowIn 1.5s ease 0.3s forwards;
+    z-index: -1;
+  }
+
+  /* Shared */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(25px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .progress-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: var(--accent);
+    z-index: 100;
+    transition: width 0.3s ease;
+  }
+
+  .controls {
+    position: fixed;
+    bottom: 30px;
+    right: 40px;
+    display: flex;
+    gap: 12px;
+    z-index: 100;
+    opacity: 0.4;
+    transition: opacity 0.3s;
+  }
+  .controls:hover { opacity: 1; }
+  .controls button {
+    padding: 10px 20px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text);
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .controls button:hover { background: rgba(255,255,255,0.14); }
+</style>
+</head>
+<body>
+
+<!-- Scene 1: The Problem -->
+<div class="scene scene-problem" id="scene-1">
+  <div class="app-icons">
+    <div class="app-icon">
+      <span>&#x1F4DD;</span>
+      <span class="app-label">Notes</span>
+    </div>
+    <div class="app-icon">
+      <span>&#x2705;</span>
+      <span class="app-label">Tasks</span>
+    </div>
+    <div class="app-icon">
+      <span>&#x1F4C5;</span>
+      <span class="app-label">Calendar</span>
+    </div>
+  </div>
+  <h2>You use one app for notes.<br>Another for tasks. Another for your calendar.</h2>
+</div>
+
+<!-- Scene 2: Things slip through the cracks -->
+<div class="scene scene-cracks" id="scene-2">
+  <div class="crack-text">Things <em>slip through</em><br>the cracks.</div>
+</div>
+
+<!-- Scene 3: What if you could just type? -->
+<div class="scene scene-whatif" id="scene-3">
+  <div class="whatif-text">What if you could just<br><span style="color: var(--accent);">type</span><span class="cursor-blink"></span></div>
+</div>
+
+<!-- Scene 4: Meet Memoir -->
+<div class="scene scene-reveal" id="scene-4">
+  <div class="logo-glow"></div>
+  <div class="logo-reveal">
+    <div class="logo-text">Memoir</div>
+  </div>
+  <div class="tagline">YOUR THOUGHTS, HANDLED</div>
+</div>
+
+<!-- Scene 5: Demo -->
+<div class="scene scene-demo" id="scene-5">
+  <div class="demo-mockup">
+    <div class="demo-topbar">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <span class="demo-title">Memoir</span>
+    </div>
+    <div class="demo-body" id="demo-messages"></div>
+    <div class="demo-input-bar">
+      <span id="demo-typing"></span><span class="typing-cursor"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Scene 6: No forms, no menus -->
+<div class="scene scene-features" id="scene-6">
+  <h2>No forms. No menus. Just your thoughts.</h2>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="icon">&#x1F4DD;</div>
+      <h3>Notes</h3>
+      <p>Type naturally. Memoir understands context and organizes your thoughts.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#x2705;</div>
+      <h3>Tasks</h3>
+      <p>Say what needs doing. Priorities, due dates &mdash; all figured out.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#x1F4C5;</div>
+      <h3>Events</h3>
+      <p>Mention a date and time. Your calendar fills itself in.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Scene 7: CTA -->
+<div class="scene scene-cta" id="scene-7">
+  <div class="glow"></div>
+  <div class="cta-logo">Memoir</div>
+  <button class="cta-button">Try it free</button>
+  <div class="cta-sub">No forms. No menus. Just your thoughts, handled.</div>
+</div>
+
+<div class="progress-bar" id="progress"></div>
+
+<div class="controls">
+  <button id="prev-btn">&#x2190; Prev</button>
+  <button id="auto-btn">&#x23F8; Pause</button>
+  <button id="next-btn">Next &#x2192;</button>
+</div>
+
+<script>
+(function() {
+  var scenes = [
+    { id: 'scene-1', duration: 5000 },
+    { id: 'scene-2', duration: 4000 },
+    { id: 'scene-3', duration: 4000 },
+    { id: 'scene-4', duration: 4000 },
+    { id: 'scene-5', duration: 10000 },
+    { id: 'scene-6', duration: 5000 },
+    { id: 'scene-7', duration: 6000 }
+  ];
+
+  var current = 0;
+  var autoPlay = true;
+  var timer = null;
+
+  function showScene(idx) {
+    current = idx;
+    var allScenes = document.querySelectorAll('.scene');
+    for (var i = 0; i < allScenes.length; i++) {
+      allScenes[i].classList.remove('active');
+    }
+    var el = document.getElementById(scenes[idx].id);
+
+    // Reset animations by removing and re-adding element content
+    var parent = el.parentNode;
+    var next = el.nextSibling;
+    parent.removeChild(el);
+    if (next) { parent.insertBefore(el, next); } else { parent.appendChild(el); }
+
+    // Force reflow
+    void el.offsetWidth;
+    el.classList.add('active');
+
+    document.getElementById('progress').style.width =
+      ((idx + 1) / scenes.length * 100) + '%';
+
+    if (idx === 4) runDemo();
+    if (autoPlay) scheduleNext();
+  }
+
+  function scheduleNext() {
+    clearTimeout(timer);
+    timer = setTimeout(function() {
+      if (current < scenes.length - 1) showScene(current + 1);
+    }, scenes[current].duration);
+  }
+
+  function nextScene() {
+    if (current < scenes.length - 1) showScene(current + 1);
+  }
+  function prevScene() {
+    if (current > 0) showScene(current - 1);
+  }
+  function toggleAuto() {
+    autoPlay = !autoPlay;
+    document.getElementById('auto-btn').textContent = autoPlay ? '\u23F8 Pause' : '\u25B6 Play';
+    if (autoPlay) scheduleNext();
+    else clearTimeout(timer);
+  }
+
+  // Demo typing
+  var demoData = [
+    { role: 'user', text: 'Meeting with Sarah tomorrow at 3pm about the Q2 roadmap' },
+    { role: 'ai', badge: 'event', badgeText: 'Event', text: 'Added: "Meeting with Sarah \u2014 Q2 roadmap" tomorrow at 3:00 PM' },
+    { role: 'user', text: 'Remember to buy groceries after work' },
+    { role: 'ai', badge: 'task', badgeText: 'Task', text: 'Created: "Buy groceries after work" \u2014 today, low priority' },
+    { role: 'user', text: 'The key insight from today: ship the MVP before funding runs out' },
+    { role: 'ai', badge: 'note', badgeText: 'Note', text: 'Saved to "Work Notes" \u2014 MVP timeline insight' }
+  ];
+
+  function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
+  async function runDemo() {
+    var container = document.getElementById('demo-messages');
+    var typingEl = document.getElementById('demo-typing');
+    container.textContent = '';
+    typingEl.textContent = '';
+
+    for (var d = 0; d < demoData.length; d++) {
+      var item = demoData[d];
+      if (item.role === 'user') {
+        typingEl.textContent = '';
+        for (var i = 0; i < item.text.length; i++) {
+          typingEl.textContent = item.text.slice(0, i + 1);
+          await sleep(25);
+        }
+        await sleep(400);
+        var userMsg = document.createElement('div');
+        userMsg.className = 'demo-message user';
+        userMsg.style.animation = 'fadeUp 0.4s ease forwards';
+        userMsg.textContent = item.text;
+        container.appendChild(userMsg);
+        typingEl.textContent = '';
+        await sleep(200);
+      } else {
+        await sleep(600);
+        var aiMsg = document.createElement('div');
+        aiMsg.className = 'demo-message ai';
+        aiMsg.style.animation = 'fadeUp 0.4s ease forwards';
+
+        var badge = document.createElement('span');
+        badge.className = 'badge badge-' + item.badge;
+        badge.textContent = item.badgeText;
+
+        var textNode = document.createTextNode(' ' + item.text);
+
+        aiMsg.appendChild(badge);
+        aiMsg.appendChild(textNode);
+        container.appendChild(aiMsg);
+        await sleep(800);
+      }
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  // Event listeners
+  document.getElementById('prev-btn').addEventListener('click', prevScene);
+  document.getElementById('next-btn').addEventListener('click', nextScene);
+  document.getElementById('auto-btn').addEventListener('click', toggleAuto);
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === ' ') nextScene();
+    if (e.key === 'ArrowLeft') prevScene();
+    if (e.key === 'p') toggleAuto();
+  });
+
+  // Start
+  showScene(0);
+})();
+</script>
+</body>
+</html>
