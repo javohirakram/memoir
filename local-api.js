@@ -25,7 +25,9 @@
   const STORAGE_KEY = "memoir_v1";
   const OPENAI_KEY_STORAGE = "memoir_openai_key";
 
-  const DEFAULT_CATEGORIES = [
+  // Allowed categories the AI can pick from — but a category only appears as a
+  // notebook in the UI after at least one note lands in it (see buildCategoryList).
+  const ALLOWED_CATEGORIES = [
     "work", "personal", "ideas", "health", "finance", "learning",
     "travel", "projects", "research", "tech", "entertainment",
     "food", "shopping", "music", "reading",
@@ -40,9 +42,13 @@
       d.notes ??= [];
       d.tasks ??= [];
       d.events ??= [];
-      d.categories ??= [...DEFAULT_CATEGORIES];
       d.chat ??= [];
       d.preferences ??= {};
+      // Migration: earlier versions seeded 15 default notebooks into storage —
+      // purge any categories that contain zero notes so the sidebar stays empty
+      // until the user actually creates a note.
+      const usedCats = new Set(d.notes.map((n) => n.category).filter(Boolean));
+      d.categories = (d.categories || []).filter((c) => usedCats.has(c));
       return d;
     } catch (e) {
       console.warn("[local-api] corrupt storage, resetting", e);
@@ -55,7 +61,7 @@
       notes: [],
       tasks: [],
       events: [],
-      categories: [...DEFAULT_CATEGORIES],
+      categories: [],
       chat: [],
       preferences: { theme: "dark", onboarding_done: false },
     };
@@ -529,11 +535,15 @@ Rules:
   }
 
   function buildCategoryList(data) {
+    // Only surface notebooks that actually contain notes — don't show empty defaults.
     const counts = {};
     for (const n of data.notes) {
+      if (!n.category) continue;
       counts[n.category] = (counts[n.category] || 0) + 1;
     }
-    return data.categories.map((name) => ({ name, count: counts[name] || 0 }));
+    return Object.keys(counts)
+      .sort()
+      .map((name) => ({ name, count: counts[name] }));
   }
 
   // ─────────────────────────────────────────────────────────────────────
