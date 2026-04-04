@@ -82,12 +82,13 @@
     gemini: {
       label: "Google Gemini",
       models: [
-        { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (fast, free tier)" },
-        { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite (fastest)" },
-        { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+        { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash (recommended — universal free tier)" },
+        { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash 8B (fastest)" },
+        { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (newer, may require paid tier in some regions)" },
+        { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
         { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro (more capable)" },
       ],
-      defaultModel: "gemini-2.0-flash",
+      defaultModel: "gemini-1.5-flash",
       hintParts: [
         { text: "Free tier: 1,500 requests/day. Get a key at " },
         { link: "https://aistudio.google.com/apikey", text: "aistudio.google.com/apikey" },
@@ -174,6 +175,7 @@
     d.chat ??= [];
     d.preferences ??= { theme: "dark", onboarding_done: false };
     d.settings ??= defaultSettings();
+    d.settings = migrateSettings(d.settings);
     // Strip out empty categories (migration from old seed-15 versions)
     const used = new Set(d.notes.map((n) => n.category).filter(Boolean));
     d.categories = (d.categories || []).filter((c) => used.has(c));
@@ -217,6 +219,15 @@
       model: PROVIDERS.gemini.defaultModel,
       ollama_url: "http://localhost:11434",
     };
+  }
+
+  // One-time migration for users who were on gemini-2.0-flash (the old default)
+  // and are hitting the 0-quota wall. Move them to 1.5-flash silently.
+  function migrateSettings(settings) {
+    if (settings.provider === "gemini" && settings.model === "gemini-2.0-flash") {
+      settings.model = "gemini-1.5-flash";
+    }
+    return settings;
   }
 
   function uuid() {
@@ -305,6 +316,41 @@ Output valid JSON matching this exact schema:
 Only include fields relevant to the intent. "intent" is required.`;
   }
 
+  // Pull a human-readable message out of a provider error response.
+  function extractProviderError(rawText) {
+    try {
+      const parsed = JSON.parse(rawText);
+      return (
+        parsed?.error?.message ||
+        parsed?.error?.status ||
+        parsed?.message ||
+        rawText.slice(0, 200)
+      );
+    } catch {
+      return rawText.slice(0, 200);
+    }
+  }
+
+  // Turn a raw HTTP error into a classified, user-friendly Error.
+  // We tag it with a .kind so the UI can show helpful advice.
+  function classifyProviderError(status, rawText, provider) {
+    const msg = extractProviderError(rawText);
+    const lower = (msg + " " + rawText).toLowerCase();
+    const err = new Error(msg);
+    err.provider = provider;
+    err.status = status;
+    if (status === 401 || status === 403 || lower.includes("api key not valid") || lower.includes("invalid api key") || lower.includes("incorrect api key")) {
+      err.kind = "invalid_key";
+    } else if (status === 429 || lower.includes("quota") || lower.includes("resource_exhausted") || lower.includes("rate limit")) {
+      err.kind = "quota";
+    } else if (status >= 500) {
+      err.kind = "server";
+    } else {
+      err.kind = "other";
+    }
+    return err;
+  }
+
   async function callGemini(userMessage, settings) {
     if (!settings.api_key) throw new Error("NO_KEY");
     const model = settings.model || PROVIDERS.gemini.defaultModel;
@@ -318,10 +364,10 @@ Only include fields relevant to the intent. "intent" is required.`;
         generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
       }),
     });
-    if (!res.ok) throw new Error("Gemini: " + (await res.text()));
+    if (!res.ok) throw classifyProviderError(res.status, await res.text(), "gemini");
     const out = await res.json();
     const text = out.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Gemini: empty response");
+    if (!text) throw new Error("Gemini returned an empty response. Try again.");
     return JSON.parse(text);
   }
 
@@ -344,7 +390,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         ],
       }),
     });
-    if (!res.ok) throw new Error("OpenAI: " + (await res.text()));
+    if (!res.ok) throw classifyProviderError(res.status, await res.text(), "openai");
     const out = await res.json();
     return JSON.parse(out.choices[0].message.content);
   }
@@ -367,7 +413,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         messages: [{ role: "user", content: userMessage }],
       }),
     });
-    if (!res.ok) throw new Error("Anthropic: " + (await res.text()));
+    if (!res.ok) throw classifyProviderError(res.status, await res.text(), "anthropic");
     const out = await res.json();
     const text = out.content?.[0]?.text || "";
     const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
@@ -391,7 +437,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         options: { temperature: 0.3 },
       }),
     });
-    if (!res.ok) throw new Error("Ollama: " + (await res.text()));
+    if (!res.ok) throw classifyProviderError(res.status, await res.text(), "ollama");
     const out = await res.json();
     return JSON.parse(out.message.content);
   }
@@ -412,6 +458,46 @@ Only include fields relevant to the intent. "intent" is required.`;
   // Intent handlers
   // ─────────────────────────────────────────────────────────────────────
 
+  function friendlyErrorMessage(e, settings) {
+    const provider = e.provider || settings.provider;
+    const providerLabel = PROVIDERS[provider]?.label || provider;
+    const model = settings.model || "";
+
+    if (e.kind === "invalid_key") {
+      return `**${providerLabel} rejected your API key.** Double-check it in Settings — it should start with \`sk-\` (OpenAI), \`sk-ant-\` (Anthropic), or be a long alphanumeric string (Gemini).`;
+    }
+
+    if (e.kind === "quota") {
+      // Gemini-specific: "limit: 0" on 2.0-flash is not a real rate limit,
+      // it's a missing-quota-allocation issue. Switching models fixes it.
+      if (provider === "gemini" && model.includes("2.0")) {
+        return (
+          `**Gemini 2.0 Flash isn't available on the free tier for your account.** ` +
+          `This is a Google-side restriction (regional / account-type). ` +
+          `Open **Settings** and switch the model to **Gemini 1.5 Flash** — it has universal free tier access.`
+        );
+      }
+      return (
+        `**${providerLabel} rate limit hit.** ` +
+        (provider === "gemini"
+          ? "You're on the free tier (1,500 requests/day, 15/minute). Wait a minute and try again, or upgrade at https://aistudio.google.com."
+          : provider === "openai"
+          ? "Check your usage at https://platform.openai.com/usage — you may have run out of credits."
+          : provider === "anthropic"
+          ? "Check your usage at https://console.anthropic.com/settings/usage."
+          : "Try again in a moment.")
+      );
+    }
+
+    if (e.kind === "server") {
+      return `**${providerLabel} is having issues right now** (HTTP ${e.status}). Try again in a minute.`;
+    }
+
+    // Generic fallback — show the parsed provider message, not raw JSON
+    const msg = (e.message || String(e)).slice(0, 300);
+    return `**${providerLabel} error:** ${msg}`;
+  }
+
   async function handleMessage(userMessage) {
     const data = await loadData();
     const settings = data.settings;
@@ -431,9 +517,9 @@ Only include fields relevant to the intent. "intent" is required.`;
       parsed = await classifyIntent(userMessage, settings);
     } catch (e) {
       if (e.message === "NO_KEY") {
-        return { type: "chat_response", message: "No API key set. Open Settings in the profile menu." };
+        return { type: "chat_response", message: "No API key set. Open **Settings** in the profile menu." };
       }
-      return { type: "chat_response", message: "AI call failed: " + e.message };
+      return { type: "chat_response", message: friendlyErrorMessage(e, settings) };
     }
 
     switch (parsed.intent) {
