@@ -6,9 +6,42 @@
 
 Notes, tasks, reminders, bookmarks, questions — just type naturally and Memoir figures out what it is and where it belongs.
 
-[Website](https://getmemoir.vercel.app) · [Report a Bug](https://github.com/javohirakram/memoir/issues) · [Request a Feature](https://github.com/javohirakram/memoir/issues)
+**Local-first. Your data stays on your machine. Bring your own AI key.**
+
+[**↓ Download for Mac**](https://github.com/javohirakram/memoir/releases/latest) ·
+[Try in browser](https://javohirakram.github.io/memoir/) ·
+[Report a bug](https://github.com/javohirakram/memoir/issues)
 
 </div>
+
+---
+
+## Two ways to run it
+
+| | Desktop app | Browser version |
+|---|---|---|
+| **Get it** | [Download the `.dmg`](https://github.com/javohirakram/memoir/releases/latest) | Visit [javohirakram.github.io/memoir](https://javohirakram.github.io/memoir/) |
+| **Storage** | JSON file in `~/Library/Application Support/Memoir/` | Browser localStorage |
+| **Survives browser clearing** | ✅ | ❌ |
+| **Works offline** | ✅ (except AI calls) | ⚠️ (needs network to load) |
+| **Install needed** | Yes (one-time) | No |
+
+Both versions share the exact same code. The desktop app is just a Tauri wrapper around the web app with native file storage.
+
+---
+
+## Bring your own AI
+
+Memoir has zero subscription cost. You plug in your own API key from any of these providers and pay them directly (all have free tiers):
+
+| Provider | Free tier | Get a key |
+|---|---|---|
+| **Google Gemini** (default) | 1,500 requests/day | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| **OpenAI** | ~$5 initial credit | [platform.openai.com](https://platform.openai.com/api-keys) |
+| **Anthropic** | $5 initial credit | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| **Ollama** | Fully offline, free forever | Install from [ollama.com](https://ollama.com) |
+
+Open the app → profile icon → **Settings** → pick a provider → paste key.
 
 ---
 
