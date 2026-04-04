@@ -186,7 +186,35 @@ Rules:
   // Intent handlers — turn parsed intent into a stored item + response
   // ─────────────────────────────────────────────────────────────────────
 
+  async function ensureOpenAIKey() {
+    let key = getOpenAIKey();
+    if (key) return key;
+    const entered = window.prompt(
+      "Memoir needs your OpenAI API key to work.\n\n" +
+        "• Your key is stored only in this browser (localStorage).\n" +
+        "• It is sent directly to api.openai.com, never to any other server.\n" +
+        "• Get a key at: https://platform.openai.com/api-keys\n\n" +
+        "Paste your key (starts with sk-...):",
+    );
+    if (entered && entered.trim().startsWith("sk-")) {
+      setOpenAIKey(entered.trim());
+      return entered.trim();
+    }
+    return null;
+  }
+
   async function handleMessage(userMessage) {
+    if (!getOpenAIKey()) {
+      const key = await ensureOpenAIKey();
+      if (!key) {
+        return {
+          type: "chat_response",
+          message:
+            "No OpenAI key provided. Type your message again once you have a key ready — I'll prompt you for it.",
+        };
+      }
+    }
+
     let parsed;
     try {
       parsed = await classifyIntent(userMessage);
@@ -194,13 +222,20 @@ Rules:
       if (e.message === "NO_KEY") {
         return {
           type: "chat_response",
-          message:
-            "👋 Welcome to Memoir! To get started, add your OpenAI API key in Settings (gear icon in the top right). Your key is stored locally and only sent to OpenAI.",
+          message: "Please add your OpenAI API key and try again.",
+        };
+      }
+      // If the key is bad, offer to re-enter it
+      if (/401|invalid|incorrect/i.test(e.message)) {
+        localStorage.removeItem(OPENAI_KEY_STORAGE);
+        return {
+          type: "chat_response",
+          message: "Your OpenAI API key was rejected. Type a message again to enter a new one.",
         };
       }
       return {
         type: "chat_response",
-        message: "Sorry, I hit an error calling the AI. Check your API key in Settings. (" + e.message + ")",
+        message: "Sorry, I hit an error calling the AI: " + e.message,
       };
     }
 
