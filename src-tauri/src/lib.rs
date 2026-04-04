@@ -65,10 +65,8 @@ pub fn run() {
             log_line("rust: tauri builder setup complete");
             Ok(())
         })
-        .on_page_load(|window, payload| {
+        .on_page_load(|_window, payload| {
             log_line(&format!("rust: page load url={}", payload.url()));
-            let probe = r#"(function(){try{var i={title:document.title,rs:document.readyState,jsRan:typeof window.__jsRan,tauri:typeof window.__TAURI__,tKeys:window.__TAURI__?Object.keys(window.__TAURI__):null,internals:typeof window.__TAURI_INTERNALS__,scripts:document.querySelectorAll('script').length,loc:window.location.href};var m='probe: '+JSON.stringify(i);if(window.__TAURI_INTERNALS__){window.__TAURI_INTERNALS__.invoke('log_debug',{message:m});}else if(window.__TAURI__&&window.__TAURI__.core){window.__TAURI__.core.invoke('log_debug',{message:m});}}catch(e){}})();"#;
-            let _ = window.eval(probe);
         })
         .run(tauri::generate_context!())
         .expect("error while running Memoir");

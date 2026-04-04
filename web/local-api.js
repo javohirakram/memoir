@@ -793,15 +793,31 @@ Only include fields relevant to the intent. "intent" is required.`;
     }
 
     async function openModal() {
-      const s = await getSettings();
-      providerSelect.value = s.provider || "gemini";
-      refreshModelList(providerSelect.value);
-      modelSelect.value = s.model || PROVIDERS[providerSelect.value].defaultModel;
-      keyInput.value = s.api_key || "";
-      ollamaUrlInput.value = s.ollama_url || "http://localhost:11434";
+      debugLog("openModal: entry");
+      // Show the modal IMMEDIATELY with defaults so the user gets instant feedback.
+      // Then fill in persisted settings asynchronously; if that fails (e.g. Tauri
+      // command not available) we still have a functional modal with defaults.
+      providerSelect.value = "gemini";
+      refreshModelList("gemini");
+      modelSelect.value = PROVIDERS.gemini.defaultModel;
+      keyInput.value = "";
+      ollamaUrlInput.value = "http://localhost:11434";
       statusEl.textContent = "";
       overlay.style.display = "";
       document.getElementById("profile-dropdown")?.classList.remove("open");
+      debugLog("openModal: overlay shown");
+      try {
+        const s = await getSettings();
+        debugLog("openModal: got settings " + JSON.stringify(s).slice(0, 80));
+        providerSelect.value = s.provider || "gemini";
+        refreshModelList(providerSelect.value);
+        modelSelect.value = s.model || PROVIDERS[providerSelect.value].defaultModel;
+        keyInput.value = s.api_key || "";
+        ollamaUrlInput.value = s.ollama_url || "http://localhost:11434";
+      } catch (e) {
+        debugLog("openModal: getSettings failed — " + (e && e.message));
+        statusEl.textContent = "(using default settings — couldn't load saved ones)";
+      }
     }
 
     function closeModal() {
@@ -837,10 +853,12 @@ Only include fields relevant to the intent. "intent" is required.`;
     });
 
     openBtn?.addEventListener("click", (e) => {
+      debugLog("openBtn: click received");
       e.preventDefault();
       e.stopPropagation();
-      openModal();
+      openModal().catch((err) => debugLog("openModal threw: " + (err && err.message)));
     });
+    debugLog("wireSettingsModal: handlers attached, openBtn=" + !!openBtn);
     closeBtn?.addEventListener("click", closeModal);
     cancelBtn?.addEventListener("click", closeModal);
     overlay.addEventListener("click", (e) => {
