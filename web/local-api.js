@@ -23,8 +23,51 @@
   // Environment detection
   // ─────────────────────────────────────────────────────────────────────
 
-  const IS_TAURI = typeof window !== "undefined" && "__TAURI__" in window;
-  const tauriInvoke = IS_TAURI ? window.__TAURI__.core.invoke : null;
+  // Tauri v2 exposes invoke via __TAURI_INTERNALS__; __TAURI__ is available
+  // only when `withGlobalTauri: true` is set in tauri.conf.json. Detect both.
+  const IS_TAURI =
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+  const tauriInvoke = !IS_TAURI
+    ? null
+    : window.__TAURI_INTERNALS__
+    ? window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__)
+    : window.__TAURI__.core.invoke.bind(window.__TAURI__.core);
+
+  // Desktop-only: pipe JS errors + console output to a Rust log file so we
+  // can debug from outside the sandboxed webview.
+  function debugLog(msg) {
+    if (!tauriInvoke) return;
+    try {
+      tauriInvoke("log_debug", { message: String(msg) }).catch(() => {});
+    } catch {}
+  }
+  if (IS_TAURI) {
+    debugLog("js: local-api.js top-level reached");
+    window.addEventListener("error", (e) => {
+      debugLog(`js ERROR: ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const r = e.reason;
+      debugLog("js UNHANDLED_REJECTION: " + (r && (r.stack || r.message) || r));
+    });
+    const origError = console.error.bind(console);
+    console.error = function () {
+      debugLog("console.error: " + Array.from(arguments).map(String).join(" "));
+      origError.apply(console, arguments);
+    };
+    const origWarn = console.warn.bind(console);
+    console.warn = function () {
+      debugLog("console.warn: " + Array.from(arguments).map(String).join(" "));
+      origWarn.apply(console, arguments);
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => debugLog("js: DOMContentLoaded"));
+    } else {
+      debugLog("js: script loaded after DOMContentLoaded");
+    }
+    window.addEventListener("load", () => debugLog("js: window load"));
+  }
 
   // ─────────────────────────────────────────────────────────────────────
   // Provider registry

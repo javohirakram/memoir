@@ -1,12 +1,27 @@
 // Memoir — Tauri desktop shell.
-// All app logic is in the frontend (index.html, script.js, local-api.js).
-// This Rust side only exposes two Tauri commands for reading/writing the
-// local data file, so the frontend can persist notes/tasks/events to disk
-// instead of browser localStorage.
 
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use tauri::Manager;
+
+const DEBUG_LOG_PATH: &str = "/tmp/memoir-debug.log";
+
+fn log_line(msg: &str) {
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(DEBUG_LOG_PATH) {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{}] {}", ts, msg);
+    }
+}
+
+#[tauri::command]
+fn log_debug(message: String) -> Result<(), String> {
+    log_line(&format!("[frontend] {}", message));
+    Ok(())
+}
 
 fn data_file_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
@@ -44,7 +59,17 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![read_store, write_store, data_dir])
+        .invoke_handler(tauri::generate_handler![read_store, write_store, data_dir, log_debug])
+        .setup(|_app| {
+            let _ = fs::remove_file(DEBUG_LOG_PATH);
+            log_line("rust: tauri builder setup complete");
+            Ok(())
+        })
+        .on_page_load(|window, payload| {
+            log_line(&format!("rust: page load url={}", payload.url()));
+            let probe = r#"(function(){try{var i={title:document.title,rs:document.readyState,jsRan:typeof window.__jsRan,tauri:typeof window.__TAURI__,tKeys:window.__TAURI__?Object.keys(window.__TAURI__):null,internals:typeof window.__TAURI_INTERNALS__,scripts:document.querySelectorAll('script').length,loc:window.location.href};var m='probe: '+JSON.stringify(i);if(window.__TAURI_INTERNALS__){window.__TAURI_INTERNALS__.invoke('log_debug',{message:m});}else if(window.__TAURI__&&window.__TAURI__.core){window.__TAURI__.core.invoke('log_debug',{message:m});}}catch(e){}})();"#;
+            let _ = window.eval(probe);
+        })
         .run(tauri::generate_context!())
         .expect("error while running Memoir");
 }
