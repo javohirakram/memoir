@@ -1,58 +1,157 @@
 /**
- * Memoir — Local API shim
+ * Memoir — Local API shim + multi-provider AI
+ * ─────────────────────────────────────────────────────────────────────
  *
- * Runs 100% in the browser. Intercepts all fetch("/api/*") calls the app makes
- * and serves them from localStorage + a direct OpenAI API call using the
- * user's own API key (stored locally, never sent to any server except OpenAI).
+ * Runs 100% client-side. Intercepts all fetch("/api/*") calls the app makes
+ * and handles them locally. Data lives either in:
+ *   • A JSON file on disk via Tauri commands (desktop app), OR
+ *   • localStorage (browser-only version on GitHub Pages)
  *
- * Storage layout (single localStorage key, JSON-serialized):
- *   {
- *     notes:       [{ id, category, title, content, created, updated }],
- *     tasks:       [{ id, title, description, due_date, due_time, priority, project, labels, done, created }],
- *     events:      [{ id, title, date, end_date, start_time, end_time, all_day, location, description, color }],
- *     categories:  ["work", "personal", ...],
- *     chat:        [{ role, html }],
- *     preferences: { theme, onboarding_done, ... },
- *   }
+ * AI calls go directly from the client to the user's chosen provider:
+ *   • Google Gemini (default — free tier is most generous)
+ *   • OpenAI
+ *   • Anthropic (Claude)
+ *   • Ollama (local model server — no API key needed)
+ *
+ * The user's API key is stored locally and only ever sent to the provider
+ * they selected. Nothing goes through any Memoir server (there is none).
  */
 (function () {
   "use strict";
 
   // ─────────────────────────────────────────────────────────────────────
-  // Storage
+  // Environment detection
+  // ─────────────────────────────────────────────────────────────────────
+
+  const IS_TAURI = typeof window !== "undefined" && "__TAURI__" in window;
+  const tauriInvoke = IS_TAURI ? window.__TAURI__.core.invoke : null;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Provider registry
+  //
+  // Each provider has a list of models, a default model, a hint about where
+  // to get a key, and a flag for whether a key is needed (Ollama doesn't).
+  // `hint` uses simple object format that we'll render as DOM nodes — no
+  // raw HTML strings, no innerHTML, no XSS surface.
+  // ─────────────────────────────────────────────────────────────────────
+
+  const PROVIDERS = {
+    gemini: {
+      label: "Google Gemini",
+      models: [
+        { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (fast, free tier)" },
+        { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite (fastest)" },
+        { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+        { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro (more capable)" },
+      ],
+      defaultModel: "gemini-2.0-flash",
+      hintParts: [
+        { text: "Free tier: 1,500 requests/day. Get a key at " },
+        { link: "https://aistudio.google.com/apikey", text: "aistudio.google.com/apikey" },
+      ],
+      needsKey: true,
+    },
+    openai: {
+      label: "OpenAI",
+      models: [
+        { id: "gpt-4o-mini", label: "GPT-4o Mini (cheap, fast)" },
+        { id: "gpt-4o", label: "GPT-4o (most capable)" },
+        { id: "gpt-4.1-mini", label: "GPT-4.1 Mini" },
+      ],
+      defaultModel: "gpt-4o-mini",
+      hintParts: [
+        { text: "Get a key at " },
+        { link: "https://platform.openai.com/api-keys", text: "platform.openai.com/api-keys" },
+      ],
+      needsKey: true,
+    },
+    anthropic: {
+      label: "Anthropic",
+      models: [
+        { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 (fast)" },
+        { id: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5 (balanced)" },
+        { id: "claude-opus-4-5-20251101", label: "Claude Opus 4.5 (most capable)" },
+      ],
+      defaultModel: "claude-haiku-4-5-20251001",
+      hintParts: [
+        { text: "Get a key at " },
+        { link: "https://console.anthropic.com/settings/keys", text: "console.anthropic.com" },
+      ],
+      needsKey: true,
+    },
+    ollama: {
+      label: "Ollama (local)",
+      models: [
+        { id: "llama3.2", label: "Llama 3.2" },
+        { id: "llama3.1", label: "Llama 3.1" },
+        { id: "qwen2.5", label: "Qwen 2.5" },
+        { id: "mistral", label: "Mistral" },
+      ],
+      defaultModel: "llama3.2",
+      hintParts: [
+        { text: "Runs a local model — 100% offline. Install from " },
+        { link: "https://ollama.com", text: "ollama.com" },
+        { text: ", then run " },
+        { code: "ollama pull llama3.2" },
+      ],
+      needsKey: false,
+    },
+  };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Storage layer — Tauri file OR localStorage
   // ─────────────────────────────────────────────────────────────────────
 
   const STORAGE_KEY = "memoir_v1";
-  const OPENAI_KEY_STORAGE = "memoir_openai_key";
+  let _cache = null;
 
-  // Allowed categories the AI can pick from — but a category only appears as a
-  // notebook in the UI after at least one note lands in it (see buildCategoryList).
-  const ALLOWED_CATEGORIES = [
-    "work", "personal", "ideas", "health", "finance", "learning",
-    "travel", "projects", "research", "tech", "entertainment",
-    "food", "shopping", "music", "reading",
-  ];
-
-  function loadData() {
+  async function loadData() {
+    if (_cache) return _cache;
+    let raw = null;
+    if (IS_TAURI) {
+      try {
+        raw = await tauriInvoke("read_store");
+      } catch (e) {
+        console.warn("[local-api] Tauri read_store failed, falling back", e);
+      }
+    }
+    if (raw === null || raw === undefined) {
+      raw = localStorage.getItem(STORAGE_KEY);
+    }
+    let d;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return freshData();
-      const d = JSON.parse(raw);
-      // Guarantee all keys exist (forward-compat for schema additions)
-      d.notes ??= [];
-      d.tasks ??= [];
-      d.events ??= [];
-      d.chat ??= [];
-      d.preferences ??= {};
-      // Migration: earlier versions seeded 15 default notebooks into storage —
-      // purge any categories that contain zero notes so the sidebar stays empty
-      // until the user actually creates a note.
-      const usedCats = new Set(d.notes.map((n) => n.category).filter(Boolean));
-      d.categories = (d.categories || []).filter((c) => usedCats.has(c));
-      return d;
+      d = raw ? JSON.parse(raw) : null;
+    } catch {
+      d = null;
+    }
+    if (!d || typeof d !== "object") d = freshData();
+    d.notes ??= [];
+    d.tasks ??= [];
+    d.events ??= [];
+    d.chat ??= [];
+    d.preferences ??= { theme: "dark", onboarding_done: false };
+    d.settings ??= defaultSettings();
+    // Strip out empty categories (migration from old seed-15 versions)
+    const used = new Set(d.notes.map((n) => n.category).filter(Boolean));
+    d.categories = (d.categories || []).filter((c) => used.has(c));
+    _cache = d;
+    return d;
+  }
+
+  async function saveData(d) {
+    _cache = d;
+    const s = JSON.stringify(d);
+    try {
+      localStorage.setItem(STORAGE_KEY, s);
     } catch (e) {
-      console.warn("[local-api] corrupt storage, resetting", e);
-      return freshData();
+      console.warn("[local-api] localStorage write failed", e);
+    }
+    if (IS_TAURI) {
+      try {
+        await tauriInvoke("write_store", { contents: s });
+      } catch (e) {
+        console.warn("[local-api] Tauri write_store failed", e);
+      }
     }
   }
 
@@ -64,15 +163,21 @@
       categories: [],
       chat: [],
       preferences: { theme: "dark", onboarding_done: false },
+      settings: defaultSettings(),
     };
   }
 
-  function saveData(d) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+  function defaultSettings() {
+    return {
+      provider: "gemini",
+      api_key: "",
+      model: PROVIDERS.gemini.defaultModel,
+      ollama_url: "http://localhost:11434",
+    };
   }
 
   function uuid() {
-    if (crypto.randomUUID) return crypto.randomUUID();
+    if (crypto?.randomUUID) return crypto.randomUUID();
     return "id-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
   }
 
@@ -81,171 +186,212 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // OpenAI — direct call from the browser using the user's own key
+  // Public settings API (used by the settings modal)
   // ─────────────────────────────────────────────────────────────────────
 
-  function getOpenAIKey() {
-    return localStorage.getItem(OPENAI_KEY_STORAGE) || "";
+  async function getSettings() {
+    const d = await loadData();
+    return { ...d.settings };
   }
 
-  function setOpenAIKey(key) {
-    localStorage.setItem(OPENAI_KEY_STORAGE, key);
+  async function updateSettings(partial) {
+    const d = await loadData();
+    d.settings = { ...d.settings, ...partial };
+    await saveData(d);
+    return d.settings;
   }
 
-  // Expose for settings UI
   window.memoirLocal = {
-    getOpenAIKey,
-    setOpenAIKey,
-    exportData: () => JSON.stringify(loadData(), null, 2),
-    importData: (json) => {
+    PROVIDERS,
+    isTauri: IS_TAURI,
+    getSettings,
+    updateSettings,
+    exportData: async () => JSON.stringify(await loadData(), null, 2),
+    importData: async (json) => {
       const d = JSON.parse(json);
-      saveData(d);
+      _cache = null;
+      await saveData(d);
     },
-    clearAll: () => localStorage.removeItem(STORAGE_KEY),
+    clearAll: async () => {
+      _cache = null;
+      localStorage.removeItem(STORAGE_KEY);
+      if (IS_TAURI) {
+        try {
+          await tauriInvoke("write_store", { contents: "{}" });
+        } catch {}
+      }
+    },
   };
 
-  const SYSTEM_PROMPT = `You are Memoir, a local-first notes assistant. The user will type something and you must classify their intent and extract structured data.
+  // ─────────────────────────────────────────────────────────────────────
+  // AI — provider adapters (Gemini default)
+  // ─────────────────────────────────────────────────────────────────────
+
+  function buildSystemPrompt() {
+    const today = new Date().toISOString().split("T")[0];
+    return `You are Memoir, a local-first notes assistant. The user will type something and you must classify their intent and extract structured data.
 
 Intents:
 - add_note:     a thought, idea, or piece of info to save
 - add_task:     something to do, a todo, a reminder (may have a date/time)
 - add_event:    a scheduled calendar event at a specific date/time
 - add_bookmark: a URL to save
-- search:       user is asking about their own saved notes ("what did I write about X?")
-- respond:      general question, greeting, or request for info that is NOT about their own notes
+- search:       user asking about their own saved notes ("what did I write about X?")
+- respond:      general question, greeting, or info request NOT about their notes
 
 Rules:
 - If the message contains a "?" or starts with what/how/why/where/when/should/can/is/are/tell me/help/explain → intent is "search" or "respond".
-- If the message contains a date/time like "tomorrow 3pm", "Friday", "next week" and describes something happening → "add_event". If it's a todo → "add_task".
-- Dates: always return ISO format YYYY-MM-DD. Today's date is ${new Date().toISOString().split("T")[0]}.
-- Categories: pick from work, personal, ideas, health, finance, learning, travel, projects, research, tech, entertainment, food, shopping, music, reading.
-- Keep title short (max 60 chars). Polish content lightly — fix grammar/typos only.`;
+- Contains a date/time like "tomorrow 3pm", "Friday", "next week" describing something happening → "add_event". Todo → "add_task".
+- Dates: ISO format YYYY-MM-DD. Today is ${today}.
+- Categories for add_note: pick ONE from: work, personal, ideas, health, finance, learning, travel, projects, research, tech, entertainment, food, shopping, music, reading.
+- Title: max 60 chars.
+- Content: lightly polish (fix grammar/typos) but preserve the user's voice.
 
-  const INTENT_SCHEMA = {
-    type: "object",
-    properties: {
-      intent: {
-        type: "string",
-        enum: ["add_note", "add_task", "add_event", "add_bookmark", "search", "respond"],
-      },
-      category: { type: "string" },
-      title: { type: "string" },
-      content: { type: "string" },
-      summary: { type: "string" },
-      task_title: { type: "string" },
-      task_description: { type: "string" },
-      task_due_date: { type: "string" },
-      task_due_time: { type: "string" },
-      task_priority: { type: "integer" },
-      event_title: { type: "string" },
-      event_date: { type: "string" },
-      event_start_time: { type: "string" },
-      event_end_time: { type: "string" },
-      event_location: { type: "string" },
-      event_description: { type: "string" },
-      bookmark_url: { type: "string" },
-      bookmark_title: { type: "string" },
-      bookmark_description: { type: "string" },
-      search_query: { type: "string" },
-      response_text: { type: "string" },
-    },
-    required: ["intent"],
-    additionalProperties: false,
-  };
+Output valid JSON matching this exact schema:
+{
+  "intent": "add_note" | "add_task" | "add_event" | "add_bookmark" | "search" | "respond",
+  "category": string,
+  "title": string,
+  "content": string,
+  "task_title": string, "task_description": string, "task_due_date": string, "task_due_time": string, "task_priority": number,
+  "event_title": string, "event_date": string, "event_start_time": string, "event_end_time": string, "event_location": string, "event_description": string,
+  "bookmark_url": string, "bookmark_title": string, "bookmark_description": string,
+  "search_query": string,
+  "response_text": string
+}
+Only include fields relevant to the intent. "intent" is required.`;
+  }
 
-  async function classifyIntent(userMessage) {
-    const key = getOpenAIKey();
-    if (!key) {
-      throw new Error("NO_KEY");
-    }
+  async function callGemini(userMessage, settings) {
+    if (!settings.api_key) throw new Error("NO_KEY");
+    const model = settings.model || PROVIDERS.gemini.defaultModel;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(settings.api_key)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+        contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+      }),
+    });
+    if (!res.ok) throw new Error("Gemini: " + (await res.text()));
+    const out = await res.json();
+    const text = out.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("Gemini: empty response");
+    return JSON.parse(text);
+  }
+
+  async function callOpenAI(userMessage, settings) {
+    if (!settings.api_key) throw new Error("NO_KEY");
+    const model = settings.model || PROVIDERS.openai.defaultModel;
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer " + key,
+        Authorization: "Bearer " + settings.api_key,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model,
+        response_format: { type: "json_object" },
+        temperature: 0.3,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: buildSystemPrompt() },
           { role: "user", content: userMessage },
         ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "memoir_intent",
-            strict: false,
-            schema: INTENT_SCHEMA,
-          },
-        },
       }),
     });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error("OpenAI error: " + err);
-    }
+    if (!res.ok) throw new Error("OpenAI: " + (await res.text()));
     const out = await res.json();
     return JSON.parse(out.choices[0].message.content);
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Intent handlers — turn parsed intent into a stored item + response
-  // ─────────────────────────────────────────────────────────────────────
-
-  async function ensureOpenAIKey() {
-    let key = getOpenAIKey();
-    if (key) return key;
-    const entered = window.prompt(
-      "Memoir needs your OpenAI API key to work.\n\n" +
-        "• Your key is stored only in this browser (localStorage).\n" +
-        "• It is sent directly to api.openai.com, never to any other server.\n" +
-        "• Get a key at: https://platform.openai.com/api-keys\n\n" +
-        "Paste your key (starts with sk-...):",
-    );
-    if (entered && entered.trim().startsWith("sk-")) {
-      setOpenAIKey(entered.trim());
-      return entered.trim();
-    }
-    return null;
+  async function callAnthropic(userMessage, settings) {
+    if (!settings.api_key) throw new Error("NO_KEY");
+    const model = settings.model || PROVIDERS.anthropic.defaultModel;
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": settings.api_key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 2048,
+        system: buildSystemPrompt() + "\n\nRespond with ONLY a JSON object. No prose. No code fences.",
+        messages: [{ role: "user", content: userMessage }],
+      }),
+    });
+    if (!res.ok) throw new Error("Anthropic: " + (await res.text()));
+    const out = await res.json();
+    const text = out.content?.[0]?.text || "";
+    const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+    return JSON.parse(cleaned);
   }
 
+  async function callOllama(userMessage, settings) {
+    const baseUrl = (settings.ollama_url || "http://localhost:11434").replace(/\/$/, "");
+    const model = settings.model || PROVIDERS.ollama.defaultModel;
+    const res = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        format: "json",
+        stream: false,
+        messages: [
+          { role: "system", content: buildSystemPrompt() },
+          { role: "user", content: userMessage },
+        ],
+        options: { temperature: 0.3 },
+      }),
+    });
+    if (!res.ok) throw new Error("Ollama: " + (await res.text()));
+    const out = await res.json();
+    return JSON.parse(out.message.content);
+  }
+
+  const PROVIDER_ADAPTERS = {
+    gemini: callGemini,
+    openai: callOpenAI,
+    anthropic: callAnthropic,
+    ollama: callOllama,
+  };
+
+  async function classifyIntent(userMessage, settings) {
+    const adapter = PROVIDER_ADAPTERS[settings.provider] || PROVIDER_ADAPTERS.gemini;
+    return await adapter(userMessage, settings);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Intent handlers
+  // ─────────────────────────────────────────────────────────────────────
+
   async function handleMessage(userMessage) {
-    if (!getOpenAIKey()) {
-      const key = await ensureOpenAIKey();
-      if (!key) {
-        return {
-          type: "chat_response",
-          message:
-            "No OpenAI key provided. Type your message again once you have a key ready — I'll prompt you for it.",
-        };
-      }
+    const data = await loadData();
+    const settings = data.settings;
+    const providerDef = PROVIDERS[settings.provider] || PROVIDERS.gemini;
+
+    if (providerDef.needsKey && !settings.api_key) {
+      return {
+        type: "chat_response",
+        message:
+          "Welcome! Open **Settings** (profile menu → Settings) and add your API key to get started. " +
+          `Memoir uses **${providerDef.label}** by default — it has a generous free tier.`,
+      };
     }
 
     let parsed;
     try {
-      parsed = await classifyIntent(userMessage);
+      parsed = await classifyIntent(userMessage, settings);
     } catch (e) {
       if (e.message === "NO_KEY") {
-        return {
-          type: "chat_response",
-          message: "Please add your OpenAI API key and try again.",
-        };
+        return { type: "chat_response", message: "No API key set. Open Settings in the profile menu." };
       }
-      // If the key is bad, offer to re-enter it
-      if (/401|invalid|incorrect/i.test(e.message)) {
-        localStorage.removeItem(OPENAI_KEY_STORAGE);
-        return {
-          type: "chat_response",
-          message: "Your OpenAI API key was rejected. Type a message again to enter a new one.",
-        };
-      }
-      return {
-        type: "chat_response",
-        message: "Sorry, I hit an error calling the AI: " + e.message,
-      };
+      return { type: "chat_response", message: "AI call failed: " + e.message };
     }
-
-    const data = loadData();
 
     switch (parsed.intent) {
       case "add_note": {
@@ -259,17 +405,16 @@ Rules:
         };
         data.notes.unshift(note);
         if (!data.categories.includes(note.category)) data.categories.push(note.category);
-        saveData(data);
+        await saveData(data);
         return {
           type: "note_saved",
           id: note.id,
           category: note.category,
           title: note.title,
           content: note.content,
-          summary: parsed.summary || "",
+          summary: "",
         };
       }
-
       case "add_task": {
         const task = {
           id: uuid(),
@@ -284,7 +429,7 @@ Rules:
           created: nowIso(),
         };
         data.tasks.unshift(task);
-        saveData(data);
+        await saveData(data);
         return {
           type: "task_created",
           id: task.id,
@@ -295,7 +440,6 @@ Rules:
           priority: task.priority,
         };
       }
-
       case "add_event": {
         const ev = {
           id: uuid(),
@@ -310,7 +454,7 @@ Rules:
           color: null,
         };
         data.events.unshift(ev);
-        saveData(data);
+        await saveData(data);
         return {
           type: "event_created",
           id: ev.id,
@@ -321,7 +465,6 @@ Rules:
           location: ev.location,
         };
       }
-
       case "add_bookmark": {
         const bm = {
           id: uuid(),
@@ -334,7 +477,8 @@ Rules:
           is_bookmark: true,
         };
         data.notes.unshift(bm);
-        saveData(data);
+        if (!data.categories.includes("reading")) data.categories.push("reading");
+        await saveData(data);
         return {
           type: "bookmark_saved",
           id: bm.id,
@@ -344,7 +488,6 @@ Rules:
           bookmark_type: "website",
         };
       }
-
       case "search": {
         const q = (parsed.search_query || userMessage).toLowerCase();
         const results = data.notes
@@ -356,37 +499,27 @@ Rules:
           )
           .slice(0, 10);
         const msg = results.length
-          ? `Found ${results.length} note${results.length === 1 ? "" : "s"} about "${parsed.search_query || userMessage}":`
-          : `I couldn't find any saved notes matching "${parsed.search_query || userMessage}".`;
+          ? `Found ${results.length} note${results.length === 1 ? "" : "s"} matching "${parsed.search_query || userMessage}":`
+          : `No notes found matching "${parsed.search_query || userMessage}".`;
         return { type: "search_results", message: msg, results };
       }
-
       case "respond":
       default:
-        return {
-          type: "chat_response",
-          message: parsed.response_text || "Got it.",
-        };
+        return { type: "chat_response", message: parsed.response_text || "Got it." };
     }
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // Route table — all /api/* endpoints the frontend calls
+  // /api/* routing
   // ─────────────────────────────────────────────────────────────────────
 
-  const FAKE_USER = {
-    email: "local@memoir.app",
-    name: "You",
-    picture: null,
-    last_seen: localStorage.getItem("memoir_last_seen") || null,
-  };
+  const FAKE_USER = { email: "local@memoir.app", name: "You", picture: null, last_seen: null };
 
   async function handleApiRequest(pathname, method, body) {
-    const data = loadData();
+    const data = await loadData();
 
-    // Auth/init endpoints — always return the fake local user
     if (pathname === "/api/init") {
-      const lastSeen = FAKE_USER.last_seen;
+      const lastSeen = localStorage.getItem("memoir_last_seen");
       localStorage.setItem("memoir_last_seen", nowIso());
       return {
         config: { google_client_id: null, ai_enabled: true },
@@ -396,7 +529,6 @@ Rules:
     if (pathname === "/api/auth/me") return { user: FAKE_USER };
     if (pathname.startsWith("/api/auth/")) return { user: FAKE_USER, token: "local" };
 
-    // Dashboard — batch load
     if (pathname === "/api/dashboard") {
       return {
         recent: data.notes.slice(0, 20),
@@ -409,35 +541,27 @@ Rules:
       };
     }
 
-    // Core AI endpoint
     if (pathname === "/api/message" && method === "POST") {
       return await handleMessage(body.message || "");
     }
 
-    // Notes
-    if (pathname === "/api/categories") {
-      return { categories: buildCategoryList(data) };
-    }
-    if (pathname === "/api/recent") {
-      return { notes: data.notes.slice(0, 20) };
-    }
+    if (pathname === "/api/categories") return { categories: buildCategoryList(data) };
+    if (pathname === "/api/recent") return { notes: data.notes.slice(0, 20) };
+
     const noteMatch = pathname.match(/^\/api\/note\/([^/]+)$/);
     if (noteMatch) {
       const id = decodeURIComponent(noteMatch[1]);
-      if (method === "GET") {
-        const note = data.notes.find((n) => n.id === id);
-        return note || {};
-      }
+      if (method === "GET") return data.notes.find((n) => n.id === id) || {};
       if (method === "DELETE") {
         data.notes = data.notes.filter((n) => n.id !== id);
-        saveData(data);
+        await saveData(data);
         return { ok: true };
       }
       if (method === "PUT") {
         const i = data.notes.findIndex((n) => n.id === id);
         if (i >= 0) {
           data.notes[i] = { ...data.notes[i], ...body, updated: nowIso() };
-          saveData(data);
+          await saveData(data);
         }
         return { ok: true };
       }
@@ -448,14 +572,11 @@ Rules:
       return { notes: data.notes.filter((n) => n.category === cat) };
     }
 
-    // Tasks
-    if (pathname === "/api/tasks" && method === "GET") {
-      return { tasks: data.tasks };
-    }
+    if (pathname === "/api/tasks" && method === "GET") return { tasks: data.tasks };
     if (pathname === "/api/tasks" && method === "POST") {
       const task = { id: uuid(), done: false, created: nowIso(), ...body };
       data.tasks.unshift(task);
-      saveData(data);
+      await saveData(data);
       return task;
     }
     if (pathname === "/api/tasks/projects") return { projects: [] };
@@ -466,76 +587,65 @@ Rules:
         const i = data.tasks.findIndex((t) => t.id === id);
         if (i >= 0) {
           data.tasks[i] = { ...data.tasks[i], ...body };
-          saveData(data);
+          await saveData(data);
         }
         return { ok: true };
       }
       if (method === "DELETE") {
         data.tasks = data.tasks.filter((t) => t.id !== id);
-        saveData(data);
+        await saveData(data);
         return { ok: true };
       }
     }
 
-    // Events
-    if (pathname === "/api/events" && method === "GET") {
-      return { events: data.events };
-    }
+    if (pathname === "/api/events" && method === "GET") return { events: data.events };
     if (pathname === "/api/events" && method === "POST") {
       const ev = { id: uuid(), ...body };
       data.events.unshift(ev);
-      saveData(data);
+      await saveData(data);
       return ev;
     }
 
-    // Preferences
     if (pathname === "/api/preferences") {
       if (method === "GET") return { preferences: data.preferences };
       if (method === "PUT") {
         data.preferences = { ...data.preferences, ...body };
-        saveData(data);
+        await saveData(data);
         return { ok: true };
       }
     }
 
-    // Chat history
     if (pathname === "/api/chat/history") {
       if (method === "GET") return { messages: data.chat };
       if (method === "PUT") {
         data.chat = body.messages || [];
-        saveData(data);
+        await saveData(data);
         return { ok: true };
       }
       if (method === "DELETE") {
         data.chat = [];
-        saveData(data);
+        await saveData(data);
         return { ok: true };
       }
     }
 
-    // Subscription / account — stub all to local/unlimited
     if (pathname === "/api/subscription") return { plan: "local", status: "active" };
     if (pathname === "/api/undo-status") return { can_undo: false, can_redo: false };
     if (pathname === "/api/undo" || pathname === "/api/redo") return { ok: true };
     if (pathname === "/api/health") return { status: "ok" };
     if (pathname === "/api/config") return { ai_enabled: true };
     if (pathname === "/api/feedback") return { ok: true };
-
-    if (pathname === "/api/export") {
-      return data;
-    }
+    if (pathname === "/api/export") return data;
     if (pathname === "/api/account" && method === "DELETE") {
-      localStorage.removeItem(STORAGE_KEY);
+      await window.memoirLocal.clearAll();
       return { ok: true };
     }
 
-    // Unknown endpoint — return empty success so the UI doesn't crash
     console.warn("[local-api] unhandled", method, pathname);
     return {};
   }
 
   function buildCategoryList(data) {
-    // Only surface notebooks that actually contain notes — don't show empty defaults.
     const counts = {};
     for (const n of data.notes) {
       if (!n.category) continue;
@@ -553,12 +663,10 @@ Rules:
   const originalFetch = window.fetch.bind(window);
 
   window.fetch = async function (input, init = {}) {
-    const url = typeof input === "string" ? input : input.url;
+    const url = typeof input === "string" ? input : input?.url;
     if (!url || !url.startsWith("/api/")) {
       return originalFetch(input, init);
     }
-
-    // Parse URL + body
     const u = new URL(url, location.origin);
     const method = (init.method || "GET").toUpperCase();
     let body = {};
@@ -569,7 +677,6 @@ Rules:
         body = {};
       }
     }
-
     try {
       const result = await handleApiRequest(u.pathname, method, body);
       return new Response(JSON.stringify(result), {
@@ -585,5 +692,130 @@ Rules:
     }
   };
 
-  console.log("[local-api] ready — running 100% in your browser");
+  // ─────────────────────────────────────────────────────────────────────
+  // Settings modal wiring — builds hint content as DOM nodes (no innerHTML)
+  // ─────────────────────────────────────────────────────────────────────
+
+  function renderHintParts(container, parts) {
+    // Clear safely
+    while (container.firstChild) container.removeChild(container.firstChild);
+    for (const part of parts) {
+      if (part.text) {
+        container.appendChild(document.createTextNode(part.text));
+      } else if (part.link) {
+        const a = document.createElement("a");
+        a.href = part.link;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = part.text;
+        container.appendChild(a);
+      } else if (part.code) {
+        const c = document.createElement("code");
+        c.textContent = part.code;
+        container.appendChild(c);
+      }
+    }
+  }
+
+  function wireSettingsModal() {
+    const overlay = document.getElementById("memoir-settings-overlay");
+    const openBtn = document.getElementById("memoir-settings-open");
+    const closeBtn = document.getElementById("memoir-settings-close");
+    const cancelBtn = document.getElementById("memoir-settings-cancel");
+    const saveBtn = document.getElementById("memoir-settings-save");
+    const exportBtn = document.getElementById("memoir-export-data");
+    const providerSelect = document.getElementById("memoir-provider");
+    const modelSelect = document.getElementById("memoir-model");
+    const keyInput = document.getElementById("memoir-api-key");
+    const keyGroup = document.getElementById("memoir-key-group");
+    const ollamaGroup = document.getElementById("memoir-ollama-group");
+    const ollamaUrlInput = document.getElementById("memoir-ollama-url");
+    const providerHint = document.getElementById("memoir-provider-hint");
+    const statusEl = document.getElementById("memoir-settings-status");
+    if (!overlay || !providerSelect) return;
+
+    function refreshModelList(providerId) {
+      const p = PROVIDERS[providerId];
+      // Clear & rebuild options via DOM methods
+      while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
+      for (const m of p.models) {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.label;
+        modelSelect.appendChild(opt);
+      }
+      renderHintParts(providerHint, p.hintParts);
+      keyGroup.style.display = p.needsKey ? "" : "none";
+      ollamaGroup.style.display = providerId === "ollama" ? "" : "none";
+    }
+
+    async function openModal() {
+      const s = await getSettings();
+      providerSelect.value = s.provider || "gemini";
+      refreshModelList(providerSelect.value);
+      modelSelect.value = s.model || PROVIDERS[providerSelect.value].defaultModel;
+      keyInput.value = s.api_key || "";
+      ollamaUrlInput.value = s.ollama_url || "http://localhost:11434";
+      statusEl.textContent = "";
+      overlay.style.display = "";
+      document.getElementById("profile-dropdown")?.classList.remove("open");
+    }
+
+    function closeModal() {
+      overlay.style.display = "none";
+    }
+
+    providerSelect.addEventListener("change", () => {
+      const id = providerSelect.value;
+      refreshModelList(id);
+      modelSelect.value = PROVIDERS[id].defaultModel;
+    });
+
+    saveBtn.addEventListener("click", async () => {
+      await updateSettings({
+        provider: providerSelect.value,
+        model: modelSelect.value,
+        api_key: keyInput.value.trim(),
+        ollama_url: ollamaUrlInput.value.trim() || "http://localhost:11434",
+      });
+      statusEl.textContent = "✓ Saved";
+      setTimeout(closeModal, 600);
+    });
+
+    exportBtn.addEventListener("click", async () => {
+      const json = await window.memoirLocal.exportData();
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `memoir-export-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    openBtn?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openModal();
+    });
+    closeBtn?.addEventListener("click", closeModal);
+    cancelBtn?.addEventListener("click", closeModal);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && overlay.style.display !== "none") closeModal();
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wireSettingsModal);
+  } else {
+    wireSettingsModal();
+  }
+
+  console.log(
+    `[local-api] ready — ${IS_TAURI ? "Tauri desktop" : "browser"} mode, storage:`,
+    IS_TAURI ? "disk" : "localStorage",
+  );
 })();

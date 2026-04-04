@@ -191,6 +191,10 @@
                                 </div>
                             </div>
                             <div class="profile-divider"></div>
+                            <button class="profile-menu-item" id="memoir-settings-open">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                <span>Settings</span>
+                            </button>
                             <button class="profile-menu-item" id="export-btn">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                 <span>Export Data</span>
@@ -535,13 +539,57 @@
         </div>
     </div>
 
+    <!-- Settings modal (provider + API key) ───────────────────────── -->
+    <div id="memoir-settings-overlay" class="overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="memoir-settings-title">
+        <div class="overlay-content" style="max-width:520px;">
+            <div class="overlay-header">
+                <h3 id="memoir-settings-title">Settings</h3>
+                <button class="icon-btn" id="memoir-settings-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="overlay-body">
+                <div class="form-group">
+                    <label for="memoir-provider">AI Provider</label>
+                    <select id="memoir-provider" class="form-input">
+                        <option value="gemini">Google Gemini (recommended — generous free tier)</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="ollama">Ollama (local model, no key needed)</option>
+                    </select>
+                    <p class="form-hint" id="memoir-provider-hint"></p>
+                </div>
+                <div class="form-group" id="memoir-key-group">
+                    <label for="memoir-api-key">API Key</label>
+                    <input type="password" id="memoir-api-key" class="form-input" placeholder="Paste your API key here" autocomplete="off" spellcheck="false" />
+                    <p class="form-hint">Stored only in this app. Never sent anywhere except directly to your chosen provider.</p>
+                </div>
+                <div class="form-group">
+                    <label for="memoir-model">Model</label>
+                    <select id="memoir-model" class="form-input"></select>
+                </div>
+                <div class="form-group" id="memoir-ollama-group" style="display:none">
+                    <label for="memoir-ollama-url">Ollama Server URL</label>
+                    <input type="text" id="memoir-ollama-url" class="form-input" value="http://localhost:11434" />
+                    <p class="form-hint">Run <code>ollama serve</code> locally, then pull a model with <code>ollama pull llama3.2</code>.</p>
+                </div>
+                <div id="memoir-settings-status" class="form-hint" style="margin-top:8px;min-height:20px;"></div>
+            </div>
+            <div class="overlay-footer" style="display:flex;gap:8px;justify-content:space-between;align-items:center;">
+                <button class="btn secondary" id="memoir-export-data">Export data</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn secondary" id="memoir-settings-cancel">Cancel</button>
+                    <button class="btn primary" id="memoir-settings-save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- PostHog analytics (replace YOUR_POSTHOG_KEY with your project API key) -->
     <script>
         !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
         posthog.init('phc_B4602rcUwBz2TjMYVgx2cHyv9g5nyb58RwQAYEQHw5Q',{api_host:'https://us.i.posthog.com', person_profiles: 'identified_only'})
     </script>
 
-    <script src="./local-api.js?v=4" defer></script>
+    <script src="./local-api.js?v=5" defer></script>
     <script src="./script.js?v=30" defer></script>
 </body>
 </html>

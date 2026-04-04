@@ -1981,3 +1981,69 @@ body::after {
 @media (max-width: 768px) {
     .welcome-banner-content { max-width: 100%; }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Settings modal — form styles
+   ───────────────────────────────────────────────────────────────── */
+#memoir-settings-overlay .overlay-content { padding: 0; }
+#memoir-settings-overlay .overlay-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px 12px;
+    border-bottom: 1px solid var(--border-light);
+}
+#memoir-settings-overlay .overlay-header h3 {
+    margin: 0;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 22px;
+    font-weight: 600;
+}
+#memoir-settings-overlay .overlay-body {
+    padding: 20px 24px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+#memoir-settings-overlay .overlay-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-light);
+}
+#memoir-settings-overlay .form-group {
+    margin-bottom: 18px;
+}
+#memoir-settings-overlay .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+#memoir-settings-overlay .form-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.15s, background 0.15s;
+    box-sizing: border-box;
+}
+#memoir-settings-overlay .form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--bg-elevated);
+}
+#memoir-settings-overlay .form-hint {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+#memoir-settings-overlay .form-hint code {
+    background: var(--bg-surface);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 11px;
+}
+#memoir-settings-overlay .form-hint a { color: var(--accent); }
