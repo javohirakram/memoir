@@ -795,15 +795,15 @@ Only include fields relevant to the intent. "intent" is required.`;
     async function openModal() {
       debugLog("openModal: entry");
       // Show the modal IMMEDIATELY with defaults so the user gets instant feedback.
-      // Then fill in persisted settings asynchronously; if that fails (e.g. Tauri
-      // command not available) we still have a functional modal with defaults.
+      // The .overlay CSS class uses opacity + pointer-events (not display) so we
+      // add the .open class — same pattern as the rest of the app's modals.
       providerSelect.value = "gemini";
       refreshModelList("gemini");
       modelSelect.value = PROVIDERS.gemini.defaultModel;
       keyInput.value = "";
       ollamaUrlInput.value = "http://localhost:11434";
       statusEl.textContent = "";
-      overlay.style.display = "";
+      overlay.classList.add("open");
       document.getElementById("profile-dropdown")?.classList.remove("open");
       debugLog("openModal: overlay shown");
       try {
@@ -821,7 +821,7 @@ Only include fields relevant to the intent. "intent" is required.`;
     }
 
     function closeModal() {
-      overlay.style.display = "none";
+      overlay.classList.remove("open");
     }
 
     providerSelect.addEventListener("change", () => {
@@ -865,7 +865,7 @@ Only include fields relevant to the intent. "intent" is required.`;
       if (e.target === overlay) closeModal();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && overlay.style.display !== "none") closeModal();
+      if (e.key === "Escape" && overlay.classList.contains("open")) closeModal();
     });
   }
 
