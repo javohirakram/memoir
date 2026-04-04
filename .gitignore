@@ -8,3 +8,8 @@ notes/
 .vercel
 .DS_Store
 .gstack/
+
+# Tauri
+/src-tauri/target/
+/src-tauri/gen/schemas/
+
