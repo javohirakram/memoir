@@ -1,6 +1,6 @@
 [package]
 name = "memoir"
-version = "0.1.6"
+version = "0.1.7"
 description = "Memoir — your AI-powered second brain. Runs 100% locally."
 authors = ["Javohir Akramov"]
 edition = "2021"

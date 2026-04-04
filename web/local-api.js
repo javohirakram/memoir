@@ -82,13 +82,13 @@
     gemini: {
       label: "Google Gemini",
       models: [
-        { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash (recommended — universal free tier)" },
-        { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash 8B (fastest)" },
-        { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (newer, may require paid tier in some regions)" },
-        { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
-        { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro (more capable)" },
+        { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (recommended — fast, free tier)" },
+        { id: "gemini-flash-latest", label: "Gemini Flash (latest stable alias)" },
+        { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite (fastest)" },
+        { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (most capable)" },
+        { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
       ],
-      defaultModel: "gemini-1.5-flash",
+      defaultModel: "gemini-2.5-flash",
       hintParts: [
         { text: "Free tier: 1,500 requests/day. Get a key at " },
         { link: "https://aistudio.google.com/apikey", text: "aistudio.google.com/apikey" },
@@ -221,11 +221,19 @@
     };
   }
 
-  // One-time migration for users who were on gemini-2.0-flash (the old default)
-  // and are hitting the 0-quota wall. Move them to 1.5-flash silently.
+  // Migrate users off deprecated Gemini models. Google removed gemini-1.5-*
+  // from new API keys in late 2025, and gemini-2.0-flash has free_tier=0 for
+  // some regions. gemini-2.5-flash is the current recommended model.
+  const DEPRECATED_GEMINI_MODELS = new Set([
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro",
+    "gemini-1.5-pro-latest",
+    "gemini-pro",
+  ]);
   function migrateSettings(settings) {
-    if (settings.provider === "gemini" && settings.model === "gemini-2.0-flash") {
-      settings.model = "gemini-1.5-flash";
+    if (settings.provider === "gemini" && DEPRECATED_GEMINI_MODELS.has(settings.model)) {
+      settings.model = "gemini-2.5-flash";
     }
     return settings;
   }
@@ -341,6 +349,8 @@ Only include fields relevant to the intent. "intent" is required.`;
     err.status = status;
     if (status === 401 || status === 403 || lower.includes("api key not valid") || lower.includes("invalid api key") || lower.includes("incorrect api key")) {
       err.kind = "invalid_key";
+    } else if (status === 404 || lower.includes("is not found for api version") || lower.includes("model not found") || lower.includes("does not exist")) {
+      err.kind = "model_not_found";
     } else if (status === 429 || lower.includes("quota") || lower.includes("resource_exhausted") || lower.includes("rate limit")) {
       err.kind = "quota";
     } else if (status >= 500) {
@@ -465,6 +475,14 @@ Only include fields relevant to the intent. "intent" is required.`;
 
     if (e.kind === "invalid_key") {
       return `**${providerLabel} rejected your API key.** Double-check it in Settings — it should start with \`sk-\` (OpenAI), \`sk-ant-\` (Anthropic), or be a long alphanumeric string (Gemini).`;
+    }
+
+    if (e.kind === "model_not_found") {
+      return (
+        `**The model \`${model}\` isn't available on your ${providerLabel} key.** ` +
+        `This usually means Google deprecated it. Open **Settings** and pick a different model from the dropdown — ` +
+        `**Gemini 2.5 Flash** is the current recommendation.`
+      );
     }
 
     if (e.kind === "quota") {
