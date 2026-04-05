@@ -1852,7 +1852,7 @@ dependencies = [
 
 [[package]]
 name = "memoir"
-version = "0.1.7"
+version = "0.1.10"
 dependencies = [
  "serde",
  "serde_json",
