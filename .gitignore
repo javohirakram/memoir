@@ -1,15 +1,21 @@
+# OS
+.DS_Store
+
+# Env
 .env
 .env*.local
+
+# Python (legacy — keeping in case)
 __pycache__/
 *.pyc
+
+# Legacy dirs
 chroma_db/
 data/
 notes/
-.vercel
-.DS_Store
+.vercel/
 .gstack/
 
 # Tauri
 /src-tauri/target/
 /src-tauri/gen/schemas/
-
