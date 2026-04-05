@@ -773,32 +773,6 @@ body::after {
 .input-area button[type="submit"]:hover { opacity: 0.9; transform: scale(1.03); }
 .input-area button[type="submit"]:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
 
-/* Mic button */
-.mic-btn {
-    position: relative;
-    width: 38px; height: 38px; display: flex; align-items: center;
-    justify-content: center; background: transparent; color: var(--text-muted);
-    border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
-    flex-shrink: 0; transition: all 0.2s;
-}
-.mic-btn:hover { color: var(--text); border-color: var(--text-muted); }
-.mic-btn .mic-recording-dot {
-    display: none; position: absolute; top: 6px; right: 6px;
-    width: 7px; height: 7px; border-radius: 50%; background: #dc5050;
-}
-.mic-btn.recording {
-    color: #dc5050; border-color: rgba(220,80,80,0.4);
-    background: rgba(220,80,80,0.08);
-}
-.mic-btn.recording .mic-recording-dot {
-    display: block;
-    animation: mic-pulse 1s ease-in-out infinite;
-}
-@keyframes mic-pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(1.3); }
-}
-
 .input-hint {
     font-size: 0.64rem; color: var(--text-muted); padding: 5px 4px 0;
     opacity: 0; transition: opacity 0.2s;
