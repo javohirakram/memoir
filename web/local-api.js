@@ -289,8 +289,46 @@
   // AI — provider adapters (Gemini default)
   // ─────────────────────────────────────────────────────────────────────
 
-  function buildSystemPrompt() {
+  function buildSystemPrompt(contextData) {
     const today = new Date().toISOString().split("T")[0];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+
+    // Conversation context — what was just created/touched, and recent items
+    let contextBlock = "";
+    if (contextData) {
+      const lines = [];
+      if (contextData.lastTouched) {
+        const lt = contextData.lastTouched;
+        lines.push(
+          `LAST TOUCHED (the user's most recent action — if they say "it", "that", "change X", they probably mean this):\n` +
+          `  type: ${lt.type}\n` +
+          `  id: ${lt.id}\n` +
+          `  title: ${lt.title}\n` +
+          (lt.due_date ? `  due_date: ${lt.due_date}\n` : "") +
+          (lt.due_time ? `  due_time: ${lt.due_time}\n` : "") +
+          (lt.date ? `  date: ${lt.date}\n` : "") +
+          (lt.start_time ? `  start_time: ${lt.start_time}\n` : "")
+        );
+      }
+      if (contextData.recentTasks?.length) {
+        lines.push(
+          `RECENT TASKS (most recent first):\n` +
+          contextData.recentTasks
+            .map((t) => `  [${t.id}] "${t.title}" due=${t.due_date || "none"} ${t.due_time || ""} ${t.done ? "(done)" : ""}`)
+            .join("\n")
+        );
+      }
+      if (contextData.recentEvents?.length) {
+        lines.push(
+          `RECENT EVENTS:\n` +
+          contextData.recentEvents
+            .map((e) => `  [${e.id}] "${e.title}" on ${e.date} ${e.start_time || ""}`)
+            .join("\n")
+        );
+      }
+      if (lines.length) contextBlock = "\n\n=== CONVERSATION CONTEXT ===\n" + lines.join("\n\n");
+    }
+
     return `You are Memoir, a local-first notes assistant. The user will type something and you must classify their intent and extract structured data.
 
 Intents:
@@ -301,6 +339,18 @@ Intents:
                 "review", "remind me to X", "todo: X", "X by Friday") is a
                 task. Does NOT require a date/time — "post on X about the
                 new release" is a task even with no date.
+- update_task:  the user wants to change a task they already created. Signals:
+                "change X to Y", "move that to Friday", "push it back", "reschedule",
+                "rename it", "mark done", "cancel it", "actually, 6pm instead",
+                "wait, make it tuesday". Use the LAST TOUCHED context to resolve
+                which task — put its id in target_id. You can change any field
+                (title, due_date, due_time, priority, done).
+- update_event: same as update_task but for calendar events. Use when user
+                wants to modify a date, time, location, or title of a recent event.
+- update_note:  same for notes (change title, content, or category).
+- delete_task:  "delete that task", "remove it", "nevermind", "cancel that"
+- delete_event: same for events
+- delete_note:  same for notes
 - add_event:    a scheduled calendar event at a SPECIFIC date AND time, usually
                 with another person or at a location. "meeting with Sarah
                 tomorrow 3pm", "dentist appointment Friday 10am". If it is
@@ -323,29 +373,34 @@ Rules:
   "post on X about Y" → add_task, NOT add_note.
   "write a blog post about launching Memoir" → add_task.
   "email John about the invoice" → add_task.
+- If there is a LAST TOUCHED item in context and the user says "change X to Y",
+  "make it Z", "actually...", "move that to...", "instead...", you MUST use
+  update_task/update_event/update_note (NOT add_task) and put the LAST TOUCHED
+  item's id in the target_id field. Do NOT create a new item.
 - Questions (contain "?" or start with what/how/why/where/when/should/can/is/
   are/tell me/help/explain) → search or respond, NEVER add_note/add_task.
-- Dates: ISO format YYYY-MM-DD. Today is ${today}. If the user says "tomorrow"
-  compute the next day. "next Friday" = the Friday after this coming one.
+- Dates: ISO format YYYY-MM-DD. Today is ${today}. Tomorrow is ${tomorrow}.
+  "next Friday" = the Friday after this coming one.
+- Times: 24-hour format "HH:MM". "6pm" → "18:00", "4 pm" → "16:00", "9am" → "09:00".
 - Categories for add_note: pick ONE from: work, personal, ideas, health,
   finance, learning, travel, projects, research, tech, entertainment, food,
   shopping, music, reading.
 - Title: max 60 chars.
-- Content: lightly polish (fix grammar/typos) but preserve the user's voice.
+- Content: lightly polish (fix grammar/typos) but preserve the user's voice.${contextBlock}
 
-Output valid JSON matching this exact schema:
+Output valid JSON matching this exact schema. Only include fields relevant to the intent. "intent" is required.
 {
-  "intent": "add_note" | "add_task" | "add_event" | "add_bookmark" | "search" | "respond",
+  "intent": "add_note" | "add_task" | "add_event" | "add_bookmark" | "update_task" | "update_event" | "update_note" | "delete_task" | "delete_event" | "delete_note" | "search" | "respond",
+  "target_id": string,          // REQUIRED for update_*/delete_* — the id of the item to modify
   "category": string,
   "title": string,
   "content": string,
-  "task_title": string, "task_description": string, "task_due_date": string, "task_due_time": string, "task_priority": number,
+  "task_title": string, "task_description": string, "task_due_date": string, "task_due_time": string, "task_priority": number, "task_done": boolean,
   "event_title": string, "event_date": string, "event_start_time": string, "event_end_time": string, "event_location": string, "event_description": string,
   "bookmark_url": string, "bookmark_title": string, "bookmark_description": string,
   "search_query": string,
   "response_text": string
-}
-Only include fields relevant to the intent. "intent" is required.`;
+}`;
   }
 
   // Pull a human-readable message out of a provider error response.
@@ -385,7 +440,7 @@ Only include fields relevant to the intent. "intent" is required.`;
     return err;
   }
 
-  async function callGemini(userMessage, settings) {
+  async function callGemini(userMessage, settings, contextData) {
     if (!settings.api_key) throw new Error("NO_KEY");
     const model = settings.model || PROVIDERS.gemini.defaultModel;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(settings.api_key)}`;
@@ -393,7 +448,7 @@ Only include fields relevant to the intent. "intent" is required.`;
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+        systemInstruction: { parts: [{ text: buildSystemPrompt(contextData) }] },
         contents: [{ role: "user", parts: [{ text: userMessage }] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
       }),
@@ -405,7 +460,7 @@ Only include fields relevant to the intent. "intent" is required.`;
     return JSON.parse(text);
   }
 
-  async function callOpenAI(userMessage, settings) {
+  async function callOpenAI(userMessage, settings, contextData) {
     if (!settings.api_key) throw new Error("NO_KEY");
     const model = settings.model || PROVIDERS.openai.defaultModel;
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -419,7 +474,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         response_format: { type: "json_object" },
         temperature: 0.3,
         messages: [
-          { role: "system", content: buildSystemPrompt() },
+          { role: "system", content: buildSystemPrompt(contextData) },
           { role: "user", content: userMessage },
         ],
       }),
@@ -429,7 +484,7 @@ Only include fields relevant to the intent. "intent" is required.`;
     return JSON.parse(out.choices[0].message.content);
   }
 
-  async function callAnthropic(userMessage, settings) {
+  async function callAnthropic(userMessage, settings, contextData) {
     if (!settings.api_key) throw new Error("NO_KEY");
     const model = settings.model || PROVIDERS.anthropic.defaultModel;
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -443,7 +498,7 @@ Only include fields relevant to the intent. "intent" is required.`;
       body: JSON.stringify({
         model,
         max_tokens: 2048,
-        system: buildSystemPrompt() + "\n\nRespond with ONLY a JSON object. No prose. No code fences.",
+        system: buildSystemPrompt(contextData) + "\n\nRespond with ONLY a JSON object. No prose. No code fences.",
         messages: [{ role: "user", content: userMessage }],
       }),
     });
@@ -454,7 +509,7 @@ Only include fields relevant to the intent. "intent" is required.`;
     return JSON.parse(cleaned);
   }
 
-  async function callOllama(userMessage, settings) {
+  async function callOllama(userMessage, settings, contextData) {
     const baseUrl = (settings.ollama_url || "http://localhost:11434").replace(/\/$/, "");
     const model = settings.model || PROVIDERS.ollama.defaultModel;
     const res = await fetch(`${baseUrl}/api/chat`, {
@@ -465,7 +520,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         format: "json",
         stream: false,
         messages: [
-          { role: "system", content: buildSystemPrompt() },
+          { role: "system", content: buildSystemPrompt(contextData) },
           { role: "user", content: userMessage },
         ],
         options: { temperature: 0.3 },
@@ -483,9 +538,25 @@ Only include fields relevant to the intent. "intent" is required.`;
     ollama: callOllama,
   };
 
-  async function classifyIntent(userMessage, settings) {
+  async function classifyIntent(userMessage, settings, contextData) {
     const adapter = PROVIDER_ADAPTERS[settings.provider] || PROVIDER_ADAPTERS.gemini;
-    return await adapter(userMessage, settings);
+    return await adapter(userMessage, settings, contextData);
+  }
+
+  // In-memory context that follows the user through the conversation.
+  // Not persisted — intentional, resets on app reload.
+  let _lastTouched = null;
+  function setLastTouched(type, item) {
+    _lastTouched = {
+      type,
+      id: item.id,
+      title: item.title || "",
+      due_date: item.due_date,
+      due_time: item.due_time,
+      date: item.date,
+      start_time: item.start_time,
+      category: item.category,
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────
@@ -554,9 +625,21 @@ Only include fields relevant to the intent. "intent" is required.`;
       };
     }
 
+    // Build conversation context: last-touched item + a few recent tasks/events
+    // so the model can resolve references like "it", "that", "change the time".
+    const contextData = {
+      lastTouched: _lastTouched,
+      recentTasks: (data.tasks || []).slice(0, 5).map((t) => ({
+        id: t.id, title: t.title, due_date: t.due_date, due_time: t.due_time, done: t.done,
+      })),
+      recentEvents: (data.events || []).slice(0, 5).map((e) => ({
+        id: e.id, title: e.title, date: e.date, start_time: e.start_time,
+      })),
+    };
+
     let parsed;
     try {
-      parsed = await classifyIntent(userMessage, settings);
+      parsed = await classifyIntent(userMessage, settings, contextData);
     } catch (e) {
       if (e.message === "NO_KEY") {
         return { type: "chat_response", message: "No API key set. Open **Settings** in the profile menu." };
@@ -577,6 +660,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         data.notes.unshift(note);
         if (!data.categories.includes(note.category)) data.categories.push(note.category);
         await saveData(data);
+        setLastTouched("note", note);
         return {
           type: "note_saved",
           id: note.id,
@@ -601,6 +685,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         };
         data.tasks.unshift(task);
         await saveData(data);
+        setLastTouched("task", task);
         return {
           type: "task_created",
           id: task.id,
@@ -626,6 +711,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         };
         data.events.unshift(ev);
         await saveData(data);
+        setLastTouched("event", ev);
         return {
           type: "event_created",
           id: ev.id,
@@ -650,6 +736,7 @@ Only include fields relevant to the intent. "intent" is required.`;
         data.notes.unshift(bm);
         if (!data.categories.includes("reading")) data.categories.push("reading");
         await saveData(data);
+        setLastTouched("note", bm);
         return {
           type: "bookmark_saved",
           id: bm.id,
@@ -659,6 +746,150 @@ Only include fields relevant to the intent. "intent" is required.`;
           bookmark_type: "website",
         };
       }
+
+      case "update_task": {
+        // Resolve target: prefer parsed.target_id, fallback to _lastTouched.
+        const targetId =
+          parsed.target_id ||
+          (_lastTouched && _lastTouched.type === "task" ? _lastTouched.id : null);
+        const idx = targetId ? data.tasks.findIndex((t) => t.id === targetId) : -1;
+        if (idx < 0) {
+          return {
+            type: "chat_response",
+            message: "I couldn't figure out which task you meant. Try mentioning it by name.",
+          };
+        }
+        const before = { ...data.tasks[idx] };
+        const patch = {};
+        if (parsed.task_title !== undefined && parsed.task_title !== "") patch.title = parsed.task_title;
+        if (parsed.task_description !== undefined && parsed.task_description !== "") patch.description = parsed.task_description;
+        if (parsed.task_due_date !== undefined && parsed.task_due_date !== "") patch.due_date = parsed.task_due_date;
+        if (parsed.task_due_time !== undefined && parsed.task_due_time !== "") patch.due_time = parsed.task_due_time;
+        if (parsed.task_priority !== undefined && parsed.task_priority !== 0) patch.priority = parsed.task_priority;
+        if (parsed.task_done !== undefined) patch.done = parsed.task_done;
+        data.tasks[idx] = { ...before, ...patch };
+        await saveData(data);
+        setLastTouched("task", data.tasks[idx]);
+        return {
+          type: "task_created",
+          id: data.tasks[idx].id,
+          title: data.tasks[idx].title,
+          description: data.tasks[idx].description,
+          due_date: data.tasks[idx].due_date,
+          due_time: data.tasks[idx].due_time,
+          priority: data.tasks[idx].priority,
+          _updated: true,
+        };
+      }
+
+      case "update_event": {
+        const targetId =
+          parsed.target_id ||
+          (_lastTouched && _lastTouched.type === "event" ? _lastTouched.id : null);
+        const idx = targetId ? data.events.findIndex((e) => e.id === targetId) : -1;
+        if (idx < 0) {
+          return {
+            type: "chat_response",
+            message: "I couldn't figure out which event you meant. Try mentioning it by name.",
+          };
+        }
+        const before = { ...data.events[idx] };
+        const patch = {};
+        if (parsed.event_title !== undefined && parsed.event_title !== "") patch.title = parsed.event_title;
+        if (parsed.event_date !== undefined && parsed.event_date !== "") patch.date = parsed.event_date;
+        if (parsed.event_start_time !== undefined && parsed.event_start_time !== "") {
+          patch.start_time = parsed.event_start_time;
+          patch.all_day = false;
+        }
+        if (parsed.event_end_time !== undefined && parsed.event_end_time !== "") patch.end_time = parsed.event_end_time;
+        if (parsed.event_location !== undefined && parsed.event_location !== "") patch.location = parsed.event_location;
+        if (parsed.event_description !== undefined && parsed.event_description !== "") patch.description = parsed.event_description;
+        data.events[idx] = { ...before, ...patch };
+        await saveData(data);
+        setLastTouched("event", data.events[idx]);
+        return {
+          type: "event_created",
+          id: data.events[idx].id,
+          title: data.events[idx].title,
+          date: data.events[idx].date,
+          start_time: data.events[idx].start_time,
+          end_time: data.events[idx].end_time,
+          location: data.events[idx].location,
+          _updated: true,
+        };
+      }
+
+      case "update_note": {
+        const targetId =
+          parsed.target_id ||
+          (_lastTouched && _lastTouched.type === "note" ? _lastTouched.id : null);
+        const idx = targetId ? data.notes.findIndex((n) => n.id === targetId) : -1;
+        if (idx < 0) {
+          return {
+            type: "chat_response",
+            message: "I couldn't figure out which note you meant.",
+          };
+        }
+        const before = { ...data.notes[idx] };
+        const patch = { updated: nowIso() };
+        if (parsed.title !== undefined && parsed.title !== "") patch.title = parsed.title;
+        if (parsed.content !== undefined && parsed.content !== "") patch.content = parsed.content;
+        if (parsed.category !== undefined && parsed.category !== "") patch.category = parsed.category;
+        data.notes[idx] = { ...before, ...patch };
+        await saveData(data);
+        setLastTouched("note", data.notes[idx]);
+        return {
+          type: "note_saved",
+          id: data.notes[idx].id,
+          category: data.notes[idx].category,
+          title: data.notes[idx].title,
+          content: data.notes[idx].content,
+          _updated: true,
+        };
+      }
+
+      case "delete_task": {
+        const targetId =
+          parsed.target_id ||
+          (_lastTouched && _lastTouched.type === "task" ? _lastTouched.id : null);
+        const task = targetId ? data.tasks.find((t) => t.id === targetId) : null;
+        if (!task) {
+          return { type: "chat_response", message: "Couldn't figure out which task to delete." };
+        }
+        data.tasks = data.tasks.filter((t) => t.id !== targetId);
+        await saveData(data);
+        if (_lastTouched && _lastTouched.id === targetId) _lastTouched = null;
+        return { type: "task_deleted", message: `Deleted task: **${task.title}**` };
+      }
+
+      case "delete_event": {
+        const targetId =
+          parsed.target_id ||
+          (_lastTouched && _lastTouched.type === "event" ? _lastTouched.id : null);
+        const ev = targetId ? data.events.find((e) => e.id === targetId) : null;
+        if (!ev) {
+          return { type: "chat_response", message: "Couldn't figure out which event to delete." };
+        }
+        data.events = data.events.filter((e) => e.id !== targetId);
+        await saveData(data);
+        if (_lastTouched && _lastTouched.id === targetId) _lastTouched = null;
+        return { type: "event_deleted", message: `Deleted event: **${ev.title}**` };
+      }
+
+      case "delete_note": {
+        const targetId =
+          parsed.target_id ||
+          (_lastTouched && _lastTouched.type === "note" ? _lastTouched.id : null);
+        const note = targetId ? data.notes.find((n) => n.id === targetId) : null;
+        if (!note) {
+          return { type: "chat_response", message: "Couldn't figure out which note to delete." };
+        }
+        data.notes = data.notes.filter((n) => n.id !== targetId);
+        await saveData(data);
+        if (_lastTouched && _lastTouched.id === targetId) _lastTouched = null;
+        return { type: "chat_response", message: `Deleted note: **${note.title}**` };
+      }
+
       case "search": {
         const q = (parsed.search_query || userMessage).toLowerCase();
         const results = data.notes
