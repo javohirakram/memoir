@@ -351,11 +351,15 @@ Intents:
 - delete_task:  "delete that task", "remove it", "nevermind", "cancel that"
 - delete_event: same for events
 - delete_note:  same for notes
-- add_event:    a scheduled calendar event at a SPECIFIC date AND time, usually
-                with another person or at a location. "meeting with Sarah
-                tomorrow 3pm", "dentist appointment Friday 10am". If it is
-                something the user is doing themselves with no meeting
-                context, prefer add_task even if a date is mentioned.
+- add_event:    a scheduled calendar event at a SPECIFIC date AND time. Use for:
+                meetings ("meeting with Sarah tomorrow 3pm"), appointments
+                ("haircut at 3pm saturday", "dentist friday 10am", "doctor
+                appointment wednesday"), social events ("dinner with Alex 7pm"),
+                classes ("yoga class wednesday 6pm"), flights, and any event
+                with another person. Solo activities WITH a specific time that
+                are recurring or at a location (gym, yoga, haircut) are also
+                events. Only prefer add_task over add_event when the message
+                describes a deadline or todo, not a scheduled appointment.
 - add_note:     a thought, idea, observation, or piece of info the user wants
                 to remember. NOT an action. "idea — build a reddit scraper",
                 "react 19 uses a new compiler", "the market closed green".
@@ -377,6 +381,9 @@ Rules:
   "make it Z", "actually...", "move that to...", "instead...", you MUST use
   update_task/update_event/update_note (NOT add_task) and put the LAST TOUCHED
   item's id in the target_id field. Do NOT create a new item.
+- If there is NO LAST TOUCHED context but the user says "change it", "delete
+  that", "update the time" — use "respond" and ask which item they mean.
+  NEVER use update_*/delete_* without a target_id.
 - Questions (contain "?" or start with what/how/why/where/when/should/can/is/
   are/tell me/help/explain) → search or respond, NEVER add_note/add_task.
 - Dates: ISO format YYYY-MM-DD. Today is ${today}. Tomorrow is ${tomorrow}.
