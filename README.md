@@ -89,7 +89,7 @@ Memoir defaults to **Google Gemini** because its free tier is the most generous 
 
 | Provider              | Free tier                        | Key page                                                                    |
 | --------------------- | -------------------------------- | --------------------------------------------------------------------------- |
-| **Gemini** *(default)*| 1,500 requests/day               | [aistudio.google.com/apikey](https://aistudio.google.com/apikey)            |
+| **Gemini** *(default)*| ~50 requests/day (free tier)     | [aistudio.google.com/apikey](https://aistudio.google.com/apikey)            |
 | OpenAI                | ~$5 starter credit               | [platform.openai.com/api-keys](https://platform.openai.com/api-keys)        |
 | Anthropic Claude      | $5 starter credit                | [console.anthropic.com](https://console.anthropic.com/settings/keys)        |
 | Ollama                | Free forever (runs locally)      | Install from [ollama.com](https://ollama.com) → `ollama pull llama3.2`       |

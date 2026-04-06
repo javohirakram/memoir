@@ -593,7 +593,7 @@ Output valid JSON matching this exact schema. Only include fields relevant to th
       return (
         `**${providerLabel} rate limit hit.** ` +
         (provider === "gemini"
-          ? "You're on the free tier (1,500 requests/day, 15/minute). Wait a minute and try again, or upgrade at https://aistudio.google.com."
+          ? "Free tier is ~50 requests/day and ~20/minute. Wait a minute and try again, or upgrade at https://aistudio.google.com."
           : provider === "openai"
           ? "Check your usage at https://platform.openai.com/usage — you may have run out of credits."
           : provider === "anthropic"
