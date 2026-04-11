@@ -1773,6 +1773,136 @@ inputEl.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefa
 
 showEmptyState();
 
+/* ================================================================
+   Render a single result card.
+   Handles all tool-call response types + confidence-tier annotations.
+   ================================================================ */
+function renderResultCard(data, originalText, wasApp) {
+    if (!data || !data.type) return;
+
+    // Route task/event cards to their dedicated UI (notes chat or toast)
+    if (data.type === "task_created") {
+        phCapture("task_created");
+        const html = annotateConfidence(renderTaskCreatedCard(data), data);
+        if (wasApp === "notes") {
+            appendMsg("assistant", html);
+        } else {
+            showToast(html, 4000);
+        }
+        loadTasks();
+        renderCalendar();
+        return;
+    }
+
+    if (data.type === "event_created") {
+        phCapture("event_created");
+        const html = annotateConfidence(renderEventCreatedCard(data), data);
+        if (wasApp === "notes") {
+            appendMsg("assistant", html);
+        } else {
+            showToast(html, 4000);
+        }
+        renderCalendar();
+        loadTasks();
+        return;
+    }
+
+    if (data.type === "task_deleted" || data.type === "event_deleted") {
+        const msg = `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`;
+        if (wasApp === "notes") {
+            appendMsg("assistant", msg);
+        } else {
+            showToast(data.message, 3000);
+        }
+        loadTasks();
+        renderCalendar();
+        return;
+    }
+
+    // Remaining types render in the notes chat view
+    if (wasApp !== "notes") {
+        switchApp("notes");
+        const empty = messagesEl.querySelector(".empty-state");
+        if (empty) empty.remove();
+        appendMsg("user", esc(originalText));
+    }
+
+    if (data.type === "chat_response") {
+        appendMsg("assistant", `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`);
+        return;
+    }
+
+    if (data.type === "bookmark_saved") {
+        phCapture("bookmark_saved", { type: data.bookmark_type });
+        const el = appendMsg("assistant", annotateConfidence(renderBookmarkCard(data, originalText), data));
+        bindBookmarkCard(el);
+        loadSidebar();
+        return;
+    }
+
+    if (data.type === "note_saved") {
+        phCapture("note_created", { category: data.category });
+        const el = appendMsg("assistant", annotateConfidence(renderConfirmCard(data, originalText), data));
+        bindConfirmCard(el);
+        loadSidebar();
+        return;
+    }
+
+    if (data.type === "search_results") {
+        let html = `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`;
+        if (data.results?.length) {
+            html += `<div class="sources-label">Sources</div><div class="results-grid">`;
+            for (const n of data.results) {
+                const preview = stripMd(n.content || "").substring(0, 150);
+                html += `
+                    <div class="note-card" data-id="${ea(n.id)}" data-title="${ea(n.title)}" data-cat="${ea(n.category)}" data-content="${ea(n.content)}" data-date="${ea(n.created || '')}">
+                        <div class="note-card-top">
+                            <span class="pill ${esc(n.category)}">${esc(n.category)}</span>
+                            <span class="note-card-title">${esc(n.title)}</span>
+                            <svg class="note-card-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                        </div>
+                        <div class="note-card-preview">${esc(preview)}</div>
+                    </div>`;
+            }
+            html += "</div>";
+        }
+        const el = appendMsg("assistant", html);
+        el.querySelectorAll(".note-card").forEach(card => {
+            card.onclick = async () => {
+                try {
+                    const r2 = await apiFetch(`/api/note/${encodeURIComponent(card.dataset.id)}`);
+                    if (r2.ok) { openNoteView(await r2.json()); return; }
+                } catch {}
+                openNoteView({
+                    id: card.dataset.id,
+                    title: card.dataset.title,
+                    content: card.dataset.content,
+                    category: card.dataset.cat,
+                    created: card.dataset.date,
+                });
+            };
+        });
+        return;
+    }
+
+    // Unknown type — fall back to chat response
+    appendMsg("assistant", `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message || "Done."))}</div>`);
+}
+
+/* Annotate a rendered card HTML with a confidence-tier badge.
+   Only applies when _needs_confirmation / _needs_clarification is set
+   (confidence < 0.85). Otherwise returns the original HTML unchanged. */
+function annotateConfidence(html, data) {
+    if (!data._needs_confirmation && !data._needs_clarification) return html;
+    const pct = Math.round((data._confidence || 0) * 100);
+    const tier = data._needs_clarification ? "low" : "medium";
+    const label = data._needs_clarification
+        ? "Not sure — is this right?"
+        : "I think so — correct?";
+    const badge = `<div class="confidence-badge confidence-${tier}" title="Model confidence: ${pct}%">${label}</div>`;
+    return `<div class="confidence-wrap">${html}${badge}</div>`;
+}
+
 async function sendMessage() {
     const text = inputEl.value.trim();
     if (!text) return;
@@ -1813,95 +1943,10 @@ async function sendMessage() {
         const data = await r.json();
         if (loader) { if (loader.remove) loader.remove(); else removeToast(loader); }
 
-        if (data.type === "task_created") {
-            phCapture("task_created");
-            if (wasApp === "notes") {
-                appendMsg("assistant", renderTaskCreatedCard(data));
-            } else {
-                showToast(renderTaskCreatedCard(data), 4000);
-            }
-            loadTasks();
-            renderCalendar();
-        } else if (data.type === "task_deleted" || data.type === "event_deleted") {
-            const msg = `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`;
-            if (wasApp === "notes") {
-                appendMsg("assistant", msg);
-            } else {
-                showToast(data.message, 3000);
-            }
-            loadTasks();
-            renderCalendar();
-        } else if (data.type === "event_created") {
-            phCapture("event_created");
-            if (wasApp === "notes") {
-                appendMsg("assistant", renderEventCreatedCard(data));
-            } else {
-                showToast(renderEventCreatedCard(data), 4000);
-            }
-            renderCalendar();
-            loadTasks();
-        } else {
-            // For all other types, show in the notes chat view
-            if (wasApp !== "notes") {
-                switchApp("notes");
-                const empty = messagesEl.querySelector(".empty-state");
-                if (empty) empty.remove();
-                appendMsg("user", esc(text));
-            }
-
-            if (data.type === "chat_response") {
-                appendMsg("assistant", `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`);
-            } else if (data.type === "bookmark_saved") {
-                phCapture("bookmark_saved", { type: data.bookmark_type });
-                const el = appendMsg("assistant", renderBookmarkCard(data, text));
-                bindBookmarkCard(el);
-                loadSidebar();
-            } else if (data.type === "list_item_removed") {
-                const el = appendMsg("assistant", renderRemovalCard(data, text));
-                bindRemovalCard(el);
-                loadSidebar();
-            } else if (data.type === "item_moved") {
-                const el = appendMsg("assistant", renderMoveCard(data, text));
-                bindMoveCard(el);
-                loadSidebar();
-            } else if (data.type === "note_rewritten") {
-                const el = appendMsg("assistant", renderConfirmCard(data, text));
-                bindConfirmCard(el);
-                loadSidebar();
-            } else if (data.type === "note_saved" || data.type === "list_updated" || data.type === "note_updated") {
-                phCapture("note_created", { category: data.category });
-                const el = appendMsg("assistant", renderConfirmCard(data, text));
-                bindConfirmCard(el);
-                loadSidebar();
-            } else if (data.type === "search_results") {
-                let html = `<div class="chat-response">${DOMPurify.sanitize(marked.parse(data.message))}</div>`;
-                if (data.results?.length) {
-                    html += `<div class="sources-label">Sources</div><div class="results-grid">`;
-                    for (const n of data.results) {
-                        const preview = stripMd(n.content).substring(0, 150);
-                        html += `
-                            <div class="note-card" data-id="${ea(n.id)}" data-title="${ea(n.title)}" data-cat="${ea(n.category)}" data-content="${ea(n.content)}" data-date="${ea(n.created || '')}">
-                                <div class="note-card-top">
-                                    <span class="pill ${esc(n.category)}">${esc(n.category)}</span>
-                                    <span class="note-card-title">${esc(n.title)}</span>
-                                    <svg class="note-card-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-                                </div>
-                                <div class="note-card-preview">${esc(preview)}</div>
-                            </div>`;
-                    }
-                    html += "</div>";
-                }
-                const el = appendMsg("assistant", html);
-                el.querySelectorAll(".note-card").forEach(card => {
-                    card.onclick = async () => {
-                        try {
-                            const r2 = await apiFetch(`/api/note/${encodeURIComponent(card.dataset.id)}`);
-                            if (r2.ok) { openNoteView(await r2.json()); return; }
-                        } catch {}
-                        openNoteView({ id: card.dataset.id, title: card.dataset.title, content: card.dataset.content, category: card.dataset.cat, created: card.dataset.date });
-                    };
-                });
-            }
+        // Multi-intent messages: unwrap and render each card in order.
+        const cards = data.type === "multi_result" ? (data.results || []) : [data];
+        for (const card of cards) {
+            renderResultCard(card, text, wasApp);
         }
     } catch (err) {
         if (loader) { if (loader.remove) loader.remove(); else removeToast(loader); }

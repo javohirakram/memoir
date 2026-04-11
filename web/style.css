@@ -2021,3 +2021,30 @@ body::after {
     font-size: 11px;
 }
 #memoir-settings-overlay .form-hint a { color: var(--accent); }
+
+/* ─────────────────────────────────────────────────────────────────
+   Confidence-tier badges on AI result cards (v0.3.0)
+   Shown only when model confidence < 0.85 (below-threshold warning).
+   ───────────────────────────────────────────────────────────────── */
+.confidence-wrap { position: relative; }
+.confidence-badge {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 6px;
+    letter-spacing: 0.02em;
+    cursor: help;
+    user-select: none;
+}
+.confidence-badge.confidence-medium {
+    background: rgba(200, 149, 108, 0.12);
+    color: var(--accent, #c8956c);
+    border: 1px solid rgba(200, 149, 108, 0.3);
+}
+.confidence-badge.confidence-low {
+    background: rgba(220, 80, 80, 0.1);
+    color: #dc5050;
+    border: 1px solid rgba(220, 80, 80, 0.3);
+}
